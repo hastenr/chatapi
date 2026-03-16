@@ -36,6 +36,8 @@ docker run -p 8080:8080 -e MASTER_API_KEY=your-key hastenr/chatapi
 - **Real-time messaging**: WebSocket connections for instant chat
 - **Durable delivery**: Store-then-send with at-least-once guarantees
 - **Message sequencing**: Per-room message ordering with acknowledgments
+- **Room metadata**: Attach arbitrary app-level context (listing IDs, order IDs, etc.) to rooms at creation time
+- **Offline webhooks**: POST webhook notifications to your backend when a message arrives for an offline user
 - **SQLite backend**: WAL mode for concurrent reads/writes
 - **REST & WebSocket APIs**: Complete HTTP and real-time interfaces
 
@@ -131,8 +133,8 @@ cd docs && hugo server
 | `DATABASE_DSN` | `file:chatapi.db?_journal_mode=WAL&_busy_timeout=5000` | SQLite database DSN |
 | `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
 | `DEFAULT_RATE_LIMIT` | `100` | Requests per second per tenant |
-| `WS_ALLOWED_ORIGINS` | *(none)* | Comma-separated allowed WebSocket origins. Use `*` for dev only |
-| `WS_MAX_CONNECTIONS_PER_USER` | `5` | Max concurrent WebSocket connections per user |
+| `WS_ALLOWED_ORIGINS` | *(none)* | Comma-separated allowed origins for WebSocket connections and REST CORS headers. Use `*` for dev only. Unset = reject all browser-origin connections |
+| `MAX_CONNECTIONS_PER_USER` | `5` | Max concurrent WebSocket connections per user |
 | `DATA_DIR` | `/var/chatapi` | Directory for data files |
 | `LOG_DIR` | `/var/log/chatapi` | Directory for log files |
 | `WORKER_INTERVAL` | `30s` | Background worker interval |
@@ -153,6 +155,8 @@ curl -X POST http://localhost:8080/admin/tenants \
   -d '{"name": "MyCompany"}'
 ```
 
+The response includes the `api_key` field — this is the only time the plaintext key is returned. Store it immediately in a secrets manager; it cannot be retrieved again.
+
 ### Create a Room
 
 ```bash
@@ -160,8 +164,14 @@ curl -X POST http://localhost:8080/rooms \
   -H "X-API-Key: your-api-key" \
   -H "X-User-Id: user123" \
   -H "Content-Type: application/json" \
-  -d '{"type": "dm", "members": ["alice", "bob"]}'
+  -d '{
+    "type": "dm",
+    "members": ["alice", "bob"],
+    "metadata": "{\"listing_id\":\"lst_99\",\"order_id\":\"ord_42\"}"
+  }'
 ```
+
+Use `metadata` to attach app-level context to the room (listing IDs, order IDs, etc.). The value is an arbitrary JSON string stored as-is and returned on every room object.
 
 ### Send a Message
 
@@ -172,6 +182,38 @@ curl -X POST http://localhost:8080/rooms/room_123/messages \
   -H "Content-Type: application/json" \
   -d '{"content": "Hello, World!"}'
 ```
+
+### Connect via WebSocket (Browser)
+
+```javascript
+// Step 1: get a short-lived token
+const { token } = await fetch('/ws/token', {
+  method: 'POST',
+  headers: { 'X-API-Key': apiKey, 'X-User-Id': userId }
+}).then(r => r.json());
+
+// Step 2: connect with the token
+const ws = new WebSocket(`wss://your-chatapi.com/ws?token=${token}`);
+```
+
+### Connect via WebSocket (Node.js / server)
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/ws', [], {
+  headers: { 'X-API-Key': apiKey, 'X-User-Id': userId }
+});
+```
+
+### Tenant Config (webhook_url)
+
+To receive offline delivery webhooks, set `webhook_url` in the tenant's config:
+
+```bash
+# Set via your admin tooling or directly in the DB config column:
+# { "webhook_url": "https://your-app.example.com/chatapi-webhook" }
+```
+
+When a message arrives for a user with no active WebSocket connection, ChatAPI will POST the message payload to that URL so your backend can trigger push notifications or other offline delivery.
 
 ## Architecture
 

@@ -57,6 +57,12 @@ export DATA_DIR="./data"
 
 # Optional: Logging level
 export LOG_LEVEL="info"
+
+# CORS and WebSocket origin allowlist (use * for local dev only)
+export WS_ALLOWED_ORIGINS="*"
+
+# Maximum concurrent WebSocket connections per user
+export MAX_CONNECTIONS_PER_USER=5
 ```
 
 ### Configuration Options
@@ -68,8 +74,8 @@ export LOG_LEVEL="info"
 | `MASTER_API_KEY` | *(required)* | Master API key for admin operations — server will not start without this |
 | `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
 | `DEFAULT_RATE_LIMIT` | `100` | Requests per second per tenant |
-| `WS_ALLOWED_ORIGINS` | *(none)* | Comma-separated allowed WebSocket origins (e.g. `https://app.example.com`). Use `*` for dev only. Unset = reject all browser-origin connections |
-| `WS_MAX_CONNECTIONS_PER_USER` | `5` | Maximum concurrent WebSocket connections per user |
+| `WS_ALLOWED_ORIGINS` | *(none)* | Comma-separated allowed origins for WebSocket connections and REST CORS headers (e.g. `https://app.example.com`). Use `*` for dev only. Unset = reject all browser-origin connections |
+| `MAX_CONNECTIONS_PER_USER` | `5` | Maximum concurrent WebSocket connections per user |
 | `DATA_DIR` | `/var/chatapi` | Directory for data files |
 | `LOG_DIR` | `/var/log/chatapi` | Directory for log files |
 | `WORKER_INTERVAL` | `30s` | Background worker interval |
@@ -107,6 +113,26 @@ Expected response:
   "status": "ok",
   "uptime": "1m30s",
   "db_writable": true
+}
+```
+
+### Create Your First Tenant
+
+```bash
+curl -X POST http://localhost:8080/admin/tenants \
+  -H "X-Master-Key: your-secure-master-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "MyApp"}'
+```
+
+The response includes an `api_key` field. **This is the only time the plaintext API key is returned** — it is stored as a SHA-256 hash in the database and cannot be retrieved again. Copy it immediately and store it in a secrets manager or environment variable.
+
+```json
+{
+  "tenant_id": "tenant_abc123",
+  "name": "MyApp",
+  "api_key": "sk_abc123def456...",
+  "created_at": "2025-12-13T12:00:00Z"
 }
 ```
 
@@ -165,4 +191,3 @@ Check the structured JSON logs for debugging:
 ```
 
 For more help, check the [troubleshooting guide](/guides/troubleshooting/) or [open an issue](https://github.com/hastenr/chatapi/issues).
-

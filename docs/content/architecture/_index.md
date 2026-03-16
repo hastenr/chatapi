@@ -66,9 +66,9 @@ ChatAPI follows a service-oriented architecture with clear separation of concern
 
 ### Authentication
 - **API Keys**: Tenant-level authentication via `X-API-Key` header only (never in query params — they appear in server logs)
-- **API Key Storage**: SHA-256 hashes stored in the database; plaintext keys are returned exactly once at creation time and cannot be recovered
+- **API Key Storage**: SHA-256 hashes stored in the database (`api_key_hash` column); plaintext keys are returned exactly once at creation time and cannot be recovered
 - **User Context**: User identification via `X-User-Id` header
-- **WebSocket Auth**: Header-based only (`X-API-Key`, `X-User-Id`)
+- **WebSocket Auth**: Header-based (`X-API-Key` + `X-User-Id`) for server clients; token-based (`POST /ws/token` then `?token=`) for browser clients
 - **No Sessions**: Stateless authentication for horizontal scaling
 
 ### Authorization
@@ -76,6 +76,10 @@ ChatAPI follows a service-oriented architecture with clear separation of concern
 - **Message Ownership**: Users can only modify their own messages
 - **Tenant Isolation**: Complete data isolation between tenants
 - **Rate Limiting**: Per-tenant request throttling
+
+### CORS
+
+CORS headers for REST responses and WebSocket origin checks are both controlled by the `WS_ALLOWED_ORIGINS` environment variable. Set it to a comma-separated list of allowed origins (e.g. `https://app.example.com,https://admin.example.com`). Use `*` during local development only. When unset, browser-origin connections are rejected.
 
 ## 💾 **Database Schema**
 
@@ -98,6 +102,7 @@ CREATE TABLE rooms (
   type TEXT NOT NULL,           -- 'dm'|'group'|'channel'
   unique_key TEXT NULL,         -- deterministic key for DMs
   name TEXT NULL,
+  metadata JSON NULL,           -- arbitrary app-level context (listing_id, order_id, etc.)
   last_seq INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -120,7 +125,7 @@ CREATE TABLE messages (
   sender_id TEXT NOT NULL,
   seq INTEGER NOT NULL,          -- per-room sequence
   content TEXT NOT NULL,
-  meta JSON NULL,
+  meta TEXT NULL,                -- arbitrary JSON string attached to the message
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -209,12 +214,67 @@ CREATE INDEX idx_notifications_status ON notifications(tenant_id, status, create
 ### WebSocket Connection Flow
 
 1. **Connection**: Client establishes WebSocket connection
-2. **Authentication**: Validate credentials on connection
+2. **Authentication**: Validate credentials (header-based or token-based)
 3. **Registration**: Add to user's connection pool
 4. **Presence Update**: Broadcast online status to room members
 5. **Message Sync**: Stream missed messages since last ACK
 6. **Real-time Events**: Bidirectional message exchange
 7. **Disconnection**: Clean up with grace period for reconnection
+
+## 🗂️ **Room Metadata**
+
+Every room can carry an arbitrary JSON string in the `metadata` field, set at creation time via `POST /rooms`. This field is intended for app-level context that your application needs alongside a chat room — for example a marketplace listing ID, an order ID, a support ticket number, or any other domain identifier.
+
+The field is stored as-is (a JSON string, not a parsed object) and returned on every room response. It is also forwarded in offline webhook payloads so your webhook handler can route or enrich events without an additional database lookup.
+
+Example — creating a room with metadata:
+
+```json
+{
+  "type": "dm",
+  "members": ["buyer_42", "seller_7"],
+  "metadata": "{\"listing_id\":\"lst_99\",\"order_id\":\"ord_42\"}"
+}
+```
+
+## 📬 **Offline Webhooks**
+
+When a message arrives for a user who has no active WebSocket connection, ChatAPI can POST a webhook to a URL configured on the tenant's `config.webhook_url` field. This lets your backend trigger push notifications, emails, or any other offline delivery channel without polling.
+
+**Webhook payload:**
+
+```json
+{
+  "event": "message.new",
+  "tenant_id": "tenant_abc123",
+  "room_id": "room_abc123",
+  "recipient_id": "user2",
+  "room_metadata": "{\"listing_id\":\"lst_99\",\"order_id\":\"ord_42\"}",
+  "message": {
+    "message_id": "msg_def456",
+    "sender_id": "user1",
+    "content": "Hello!",
+    "seq": 44,
+    "created_at": "2025-12-13T12:10:00Z"
+  }
+}
+```
+
+**Fields:**
+- `event` — always `"message.new"` for offline message webhooks
+- `tenant_id` — identifies the tenant
+- `room_id` — the room where the message was sent
+- `recipient_id` — the offline user who should receive the message
+- `room_metadata` — the room's `metadata` string (may be `null`)
+- `message` — the message that was sent
+
+The webhook is delivered with a short timeout and retried with exponential backoff up to `RETRY_MAX_ATTEMPTS` times. Failed webhook deliveries appear in the dead-letter queue (`GET /admin/dead-letters`).
+
+Configure `webhook_url` per tenant in the tenant's `config` JSON:
+
+```json
+{ "webhook_url": "https://your-app.example.com/chatapi-webhook" }
+```
 
 ## 📊 **Performance Characteristics**
 
@@ -254,13 +314,13 @@ CREATE INDEX idx_notifications_status ON notifications(tenant_id, status, create
 
 ### Monitoring
 - **Health Endpoint**: `GET /health` — service status and DB writability
-- **Metrics Endpoint**: `GET /metrics` — live counters: `active_connections`, `messages_sent`, `broadcast_drops`, `delivery_attempts`, `delivery_failures`, `uptime_seconds`
+- **Metrics Endpoint**: `GET /metrics` — live counters: `active_connections`, `messages_sent`, `dropped_broadcasts`, `delivery_attempts`, `delivery_failures`, `uptime_seconds`
 - **Structured Logging**: JSON log output via `slog`
 - **Admin Endpoints**: `GET /admin/dead-letters` for failed delivery inspection
 
 ### Configuration
 - **Environment Variables**: Runtime configuration
-- **Tenant Config**: Per-tenant feature flags
+- **Tenant Config**: Per-tenant feature flags (including `webhook_url`)
 - **Database Tuning**: WAL and connection parameters
 
 ### Deployment
@@ -395,4 +455,3 @@ volumes:
 ---
 
 *This architecture is designed for simplicity while maintaining production reliability. The service-oriented design allows for independent scaling and maintenance of components.*
-

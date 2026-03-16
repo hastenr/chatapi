@@ -18,7 +18,7 @@ X-API-Key: your-tenant-api-key
 X-User-Id: user-identifier
 ```
 
-- **X-API-Key**: Identifies your tenant (organization)
+- **X-API-Key**: Identifies your tenant (organization). API keys are stored as SHA-256 hashes in the database; the plaintext key is returned only once at tenant creation and cannot be retrieved again.
 - **X-User-Id**: Identifies the user performing the action
 
 ### Admin Endpoints
@@ -34,6 +34,35 @@ X-Master-Key: your-master-api-key
 
 ## Rooms
 
+### List Rooms
+
+List all rooms the authenticated user belongs to.
+
+```http
+GET /rooms
+```
+
+**Response:**
+```json
+{
+  "rooms": [
+    {
+      "room_id": "room_abc123",
+      "type": "dm",
+      "unique_key": "dm:alice:bob",
+      "name": null,
+      "metadata": "{\"listing_id\":\"lst_99\"}",
+      "last_seq": 42,
+      "created_at": "2025-12-13T12:00:00Z"
+    }
+  ]
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `401` - Authentication failed
+
 ### Create Room
 
 Create a new chat room (DM, group, or channel).
@@ -47,9 +76,12 @@ POST /rooms
 {
   "type": "dm" | "group" | "channel",
   "members": ["user1", "user2"],
-  "name": "Optional room name"
+  "name": "Optional room name",
+  "metadata": "{\"listing_id\":\"lst_99\",\"order_id\":\"ord_42\"}"
 }
 ```
+
+The `metadata` field is an optional arbitrary JSON string. It is stored as-is and returned on every room object. Use it to attach app-level context (listing IDs, order IDs, etc.) that your application needs without storing it separately. It is also included in offline webhook payloads.
 
 **Response:**
 ```json
@@ -58,6 +90,7 @@ POST /rooms
   "type": "dm",
   "unique_key": "dm:user1:user2",
   "name": null,
+  "metadata": "{\"listing_id\":\"lst_99\",\"order_id\":\"ord_42\"}",
   "last_seq": 0,
   "created_at": "2025-12-13T12:00:00Z"
 }
@@ -83,6 +116,7 @@ GET /rooms/{room_id}
   "room_id": "room_abc123",
   "type": "group",
   "name": "Team Chat",
+  "metadata": null,
   "last_seq": 42,
   "created_at": "2025-12-13T12:00:00Z"
 }
@@ -126,12 +160,11 @@ POST /rooms/{room_id}/messages
 ```json
 {
   "content": "Hello, world!",
-  "meta": {
-    "type": "text",
-    "mentions": ["user2"]
-  }
+  "meta": "{\"type\":\"text\",\"mentions\":[\"user2\"]}"
 }
 ```
+
+The `meta` field is an optional arbitrary JSON string that is stored with the message and returned when reading messages. Use it for client-defined message metadata such as type hints, mention lists, or reaction data.
 
 **Response:**
 ```json
@@ -162,10 +195,7 @@ GET /rooms/{room_id}/messages?after_seq=40&limit=50
     "sender_id": "user1",
     "seq": 41,
     "content": "Hello, world!",
-    "meta": {
-      "type": "text",
-      "mentions": ["user2"]
-    },
+    "meta": "{\"type\":\"text\",\"mentions\":[\"user2\"]}",
     "created_at": "2025-12-13T12:10:00Z"
   }
 ]
@@ -230,6 +260,38 @@ POST /notify
 }
 ```
 
+## WebSocket Tokens
+
+### Issue WebSocket Token
+
+Issue a short-lived, single-use authentication token for browser WebSocket connections. Browser clients cannot set custom HTTP headers on WebSocket connections, so this token-based flow is required.
+
+```http
+POST /ws/token
+```
+
+**Authentication:** Standard `X-API-Key` + `X-User-Id` headers.
+
+**Response:**
+```json
+{
+  "token": "wst_a1b2c3d4e5f6...",
+  "expires_in": 60
+}
+```
+
+After obtaining a token, connect to the WebSocket endpoint:
+
+```
+wss://your-chatapi.com/ws?token=wst_a1b2c3d4e5f6...
+```
+
+The token is valid for **60 seconds** and is consumed on first use. If the connection attempt fails, request a new token before retrying.
+
+**Status Codes:**
+- `200` - Token issued successfully
+- `401` - Invalid API key or user ID
+
 ## Health & Monitoring
 
 ### Health Check
@@ -249,9 +311,39 @@ GET /health
 }
 ```
 
-### Create Tenant (Admin)
+### Server Metrics
 
-Create a new tenant with auto-generated API key (admin only).
+Returns live server counters. No authentication required.
+
+```http
+GET /metrics
+```
+
+**Response:**
+```json
+{
+  "active_connections": 42,
+  "messages_sent": 18340,
+  "delivery_attempts": 21005,
+  "delivery_failures": 12,
+  "dropped_broadcasts": 3,
+  "uptime_seconds": 86400
+}
+```
+
+**Fields:**
+- `active_connections` — currently open WebSocket connections
+- `messages_sent` — total messages sent since server start
+- `delivery_attempts` — total background delivery attempts
+- `delivery_failures` — deliveries that failed permanently (see dead-letter queue)
+- `dropped_broadcasts` — broadcasts dropped due to slow consumers
+- `uptime_seconds` — server uptime in seconds
+
+## Admin Endpoints
+
+### Create Tenant
+
+Create a new tenant with an auto-generated API key. Requires `X-Master-Key` authentication (not `X-API-Key`).
 
 ```http
 POST /admin/tenants
@@ -273,8 +365,8 @@ X-Master-Key: your-master-api-key
 ```json
 {
   "tenant_id": "tenant_abc123",
-  "api_key": "sk_abc123def456ghi789jkl012mno345pqr678stu901vwx",
   "name": "MyCompany",
+  "api_key": "sk_abc123def456ghi789jkl012mno345pqr678stu901vwx",
   "created_at": "2025-12-13T12:00:00Z"
 }
 ```
@@ -285,7 +377,7 @@ X-Master-Key: your-master-api-key
 - `401` - Invalid master API key
 - `500` - Server error
 
-**Security Note:** Store the returned `api_key` securely - it cannot be retrieved later.
+**Security Note:** The `api_key` is returned **only in this response**. It is stored as a SHA-256 hash in the database — the plaintext can never be retrieved again. Copy it immediately and store it securely (e.g. in a secrets manager).
 
 ### Dead Letters (Admin)
 
@@ -293,6 +385,11 @@ View failed deliveries (admin endpoint).
 
 ```http
 GET /admin/dead-letters?tenant_id=tenant_abc&limit=100
+```
+
+**Authentication:**
+```
+X-Master-Key: your-master-api-key
 ```
 
 **Query Parameters:**
@@ -494,4 +591,3 @@ func sendMessage(roomID, content string) error {
     return nil
 }
 ```
-

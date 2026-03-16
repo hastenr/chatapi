@@ -18,25 +18,54 @@ wss://your-chatapi-instance.com/ws  # for HTTPS
 
 ### Authentication
 
-WebSocket connections require authentication via headers or query parameters:
+WebSocket authentication depends on the type of client:
 
-**Headers (recommended):**
+#### Server / Node.js clients
+
+Server-side clients can set custom HTTP headers during the WebSocket handshake. Pass credentials via headers:
+
 ```
 X-API-Key: your-tenant-api-key
 X-User-Id: user-identifier
 ```
 
-**Query Parameters (fallback):**
+Alternatively, `user_id` can be passed as a query parameter alongside the `X-API-Key` header:
+
 ```
-/ws?api_key=your-tenant-api-key&user_id=user-identifier
+/ws?user_id=user-identifier
 ```
 
-**Security Note**: Prefer header-based authentication as query parameters may be logged or cached by proxies.
+#### Browser clients
+
+Browsers do not allow setting custom headers on WebSocket connections. Use the token-based flow instead:
+
+**Step 1 — Fetch a token** via `POST /ws/token` (standard REST call with `X-API-Key` + `X-User-Id` headers):
+
+```javascript
+const resp = await fetch('/ws/token', {
+  method: 'POST',
+  headers: {
+    'X-API-Key': apiKey,
+    'X-User-Id': userId
+  }
+});
+const { token } = await resp.json();
+```
+
+**Step 2 — Connect using the token** as a query parameter:
+
+```javascript
+const ws = new WebSocket(`wss://your-chatapi.com/ws?token=${token}`);
+```
+
+Tokens are **single-use** and expire after **60 seconds**. If the connection attempt fails, request a new token before retrying.
+
+> **Security note**: The `?api_key=` query parameter auth method was removed as a security fix — API keys passed in query parameters appear in server logs and proxy access logs. Do not attempt to authenticate using `?api_key=`.
 
 ### Connection Lifecycle
 
 1. **Connect**: Client establishes WebSocket connection
-2. **Authenticate**: Server validates credentials
+2. **Authenticate**: Server validates credentials (header or token)
 3. **Register**: Connection registered for real-time events
 4. **Sync**: Server streams missed messages
 5. **Communicate**: Bidirectional message exchange
@@ -64,10 +93,7 @@ Send a message to a room.
   "type": "send_message",
   "room_id": "room_abc123",
   "content": "Hello, world!",
-  "meta": {
-    "type": "text",
-    "mentions": ["user2"]
-  }
+  "meta": "{\"type\":\"text\",\"mentions\":[\"user2\"]}"
 }
 ```
 
@@ -126,10 +152,7 @@ New messages in subscribed rooms.
   "seq": 44,
   "sender_id": "user1",
   "content": "Hello, world!",
-  "meta": {
-    "type": "text",
-    "mentions": ["user2"]
-  },
+  "meta": "{\"type\":\"text\",\"mentions\":[\"user2\"]}",
   "created_at": "2025-12-13T12:10:00Z"
 }
 ```
@@ -220,7 +243,7 @@ Graceful shutdown notification.
 
 ### On Connect
 
-1. **Validation**: Server validates API key and user ID
+1. **Validation**: Server validates credentials (API key + user ID, or token)
 2. **Registration**: Connection registered for the user
 3. **Presence Broadcast**: Online status sent to room members
 4. **Message Sync**: Missed messages streamed in order
@@ -234,10 +257,12 @@ Graceful shutdown notification.
 
 ### Reconnection
 
-Clients should implement exponential backoff reconnection:
+Clients should implement exponential backoff reconnection.
+
+**Node.js / server clients:**
 
 ```javascript
-let reconnectDelay = 1000; // Start with 1 second
+let reconnectDelay = 1000;
 
 function connect() {
   const ws = new WebSocket('ws://your-chatapi.com/ws', [], {
@@ -249,11 +274,40 @@ function connect() {
 
   ws.onclose = () => {
     setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, 30000); // Max 30 seconds
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
   };
 
   ws.onopen = () => {
-    reconnectDelay = 1000; // Reset delay on successful connection
+    reconnectDelay = 1000;
+  };
+}
+```
+
+**Browser clients** must refresh the token before each reconnect attempt:
+
+```javascript
+let reconnectDelay = 1000;
+
+async function getToken() {
+  const resp = await fetch('/ws/token', {
+    method: 'POST',
+    headers: { 'X-API-Key': apiKey, 'X-User-Id': userId }
+  });
+  const { token } = await resp.json();
+  return token;
+}
+
+async function connect() {
+  const token = await getToken();
+  const ws = new WebSocket(`wss://your-chatapi.com/ws?token=${token}`);
+
+  ws.onclose = () => {
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  };
+
+  ws.onopen = () => {
+    reconnectDelay = 1000;
   };
 }
 ```
@@ -298,24 +352,35 @@ WebSocket connections include automatic ping/pong:
 
 ## Client Implementation Examples
 
-### JavaScript (Native WebSocket)
+### JavaScript (Browser — token flow)
 
 ```javascript
 class ChatAPIClient {
-  constructor(apiKey, userId) {
+  constructor(apiKey, userId, baseUrl = 'https://your-chatapi.com') {
     this.apiKey = apiKey;
     this.userId = userId;
+    this.baseUrl = baseUrl;
     this.ws = null;
     this.reconnectDelay = 1000;
   }
 
-  connect() {
-    this.ws = new WebSocket('ws://localhost:8080/ws', [], {
+  async fetchToken() {
+    const resp = await fetch(`${this.baseUrl}/ws/token`, {
+      method: 'POST',
       headers: {
         'X-API-Key': this.apiKey,
         'X-User-Id': this.userId
       }
     });
+    if (!resp.ok) throw new Error('Failed to fetch WS token');
+    const { token } = await resp.json();
+    return token;
+  }
+
+  async connect() {
+    const token = await this.fetchToken();
+    const wsUrl = this.baseUrl.replace(/^http/, 'ws');
+    this.ws = new WebSocket(`${wsUrl}/ws?token=${token}`);
 
     this.ws.onopen = () => {
       console.log('Connected to ChatAPI');
@@ -364,11 +429,9 @@ class ChatAPIClient {
     switch (message.type) {
       case 'message':
         console.log('New message:', message);
-        // Handle new message
         break;
       case 'presence.update':
         console.log('Presence update:', message);
-        // Handle presence change
         break;
       case 'server.shutdown':
         console.log('Server shutting down, reconnecting in', message.reconnect_after_ms, 'ms');
@@ -383,7 +446,7 @@ const client = new ChatAPIClient('your-api-key', 'user123');
 client.connect();
 ```
 
-### Python (websockets library)
+### Python (websockets library — server client)
 
 ```python
 import asyncio
@@ -413,7 +476,6 @@ class ChatAPIClient:
             print("Connected to ChatAPI")
             self.reconnect_delay = 1.0
 
-            # Start message handler
             asyncio.create_task(self.handle_messages())
 
         except Exception as e:
@@ -472,14 +534,13 @@ async def main():
     client = ChatAPIClient('your-api-key', 'user123')
     await client.connect()
 
-    # Keep the connection alive
     while True:
         await asyncio.sleep(1)
 
 asyncio.run(main())
 ```
 
-### Go (gorilla/websocket)
+### Go (gorilla/websocket — server client)
 
 ```go
 package main
@@ -487,6 +548,7 @@ package main
 import (
     "encoding/json"
     "log"
+    "net/http"
     "net/url"
     "time"
 
@@ -516,13 +578,12 @@ func (c *ChatAPIClient) connect() error {
         return err
     }
 
-    // Add query parameters for authentication
-    q := u.Query()
-    q.Set("api_key", c.apiKey)
-    q.Set("user_id", c.userId)
-    u.RawQuery = q.Encode()
+    // Server clients authenticate via headers
+    headers := http.Header{}
+    headers.Set("X-API-Key", c.apiKey)
+    headers.Set("X-User-Id", c.userId)
 
-    conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+    conn, _, err := websocket.DefaultDialer.Dial(u.String(), headers)
     if err != nil {
         return err
     }
@@ -621,7 +682,6 @@ func main() {
         log.Fatal("Failed to connect:", err)
     }
 
-    // Keep the program running
     select {}
 }
 ```
@@ -633,7 +693,7 @@ func main() {
 - **Single Connection**: Maintain one WebSocket connection per user
 - **Reconnection Logic**: Implement exponential backoff
 - **Graceful Shutdown**: Handle server shutdown messages
-- **Connection Pooling**: Avoid multiple connections for the same user
+- **Connection Pooling**: Avoid multiple connections for the same user (server enforces `MAX_CONNECTIONS_PER_USER`, default 5)
 
 ### Message Handling
 
@@ -652,7 +712,7 @@ func main() {
 ### Security
 
 - **Authentication**: Always use secure WebSocket (WSS) in production
+- **Token Flow**: Use `POST /ws/token` for browser clients — never expose API keys in URLs
 - **Input Validation**: Validate all incoming messages
 - **Rate Limiting**: Respect server rate limits
-- **Token Refresh**: Handle authentication token expiration
-
+- **CORS**: Configure `WS_ALLOWED_ORIGINS` on the server to restrict which browser origins may connect

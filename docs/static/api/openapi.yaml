@@ -1,7 +1,35 @@
 openapi: 3.0.3
 info:
   title: ChatAPI
-  description: A lightweight, multitenant chat service built in Go with SQLite, WebSocket support, and durable message delivery
+  description: |
+    A lightweight, multitenant chat service built in Go with SQLite, WebSocket support, and durable message delivery.
+
+    ## Authentication
+
+    Most endpoints require two headers:
+    - `X-API-Key`: Your tenant API key (issued once at tenant creation — store it securely)
+    - `X-User-Id`: The user performing the action
+
+    Admin endpoints (`/admin/*`) use a separate master key:
+    - `X-Master-Key`: The server-wide master key (set via `MASTER_API_KEY` env var)
+
+    ## WebSocket Authentication
+
+    The WebSocket endpoint (`GET /ws`) supports two authentication methods:
+
+    **Server/Node.js clients** — pass credentials via headers at connection time:
+    ```
+    X-API-Key: <api-key>
+    X-User-Id: <user-id>   (or ?user_id=<id> query param)
+    ```
+
+    **Browser clients** — browsers cannot set custom WebSocket headers. Use the token flow:
+    1. Call `POST /ws/token` with `X-API-Key` + `X-User-Id` to obtain a short-lived token
+    2. Connect to `/ws?token=<token>` — the token authenticates the connection
+
+    Tokens are single-use and expire after 60 seconds.
+
+    > **Security note**: The `?api_key=` query parameter was removed as a security fix (query params appear in server logs). Do not attempt to authenticate via that method.
   version: 1.0.0
   contact:
     name: ChatAPI Team
@@ -22,6 +50,7 @@ paths:
     get:
       summary: Health check
       description: Check service health and status
+      security: []
       responses:
         '200':
           description: Service is healthy
@@ -40,63 +69,94 @@ paths:
                     type: boolean
                     example: true
 
+  /metrics:
+    get:
+      summary: Server metrics
+      description: Returns live server metrics counters. No authentication required.
+      security: []
+      responses:
+        '200':
+          description: Current server metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_connections:
+                    type: integer
+                    description: Number of currently open WebSocket connections
+                    example: 42
+                  messages_sent:
+                    type: integer
+                    description: Total messages sent since server start
+                    example: 18340
+                  delivery_attempts:
+                    type: integer
+                    description: Total delivery attempts made by the background worker
+                    example: 21005
+                  delivery_failures:
+                    type: integer
+                    description: Total delivery attempts that failed permanently
+                    example: 12
+                  dropped_broadcasts:
+                    type: integer
+                    description: Broadcast messages dropped due to slow consumers
+                    example: 3
+                  uptime_seconds:
+                    type: integer
+                    description: Server uptime in seconds
+                    example: 86400
+
   /rooms:
+    get:
+      summary: List rooms
+      description: List all rooms the authenticated user belongs to.
+      responses:
+        '200':
+          description: Rooms the user is a member of
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rooms:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Room'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+
     post:
       summary: Create room
-      description: Create a new chat room (DM, group, or channel)
+      description: Create a new chat room (DM, group, or channel).
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - type
-                - members
-              properties:
-                type:
-                  type: string
-                  enum: [dm, group, channel]
-                  example: "dm"
-                members:
-                  type: array
-                  items:
-                    type: string
-                  example: ["user1", "user2"]
-                name:
-                  type: string
-                  example: "Team Chat"
+              $ref: '#/components/schemas/CreateRoomRequest'
       responses:
         '201':
           description: Room created successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  room_id:
-                    type: string
-                    example: "room_abc123"
-                  type:
-                    type: string
-                    example: "dm"
-                  unique_key:
-                    type: string
-                    example: "dm:user1:user2"
-                  name:
-                    type: string
-                    nullable: true
-                  last_seq:
-                    type: integer
-                    example: 0
-                  created_at:
-                    type: string
-                    format: date-time
+                $ref: '#/components/schemas/Room'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '409':
+          description: Room already exists (for DMs)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /rooms/{room_id}:
     get:
       summary: Get room
-      description: Retrieve room information
+      description: Retrieve room information.
       parameters:
         - name: room_id
           in: path
@@ -109,25 +169,16 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  room_id:
-                    type: string
-                  type:
-                    type: string
-                  name:
-                    type: string
-                    nullable: true
-                  last_seq:
-                    type: integer
-                  created_at:
-                    type: string
-                    format: date-time
+                $ref: '#/components/schemas/Room'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
 
   /rooms/{room_id}/members:
     get:
       summary: List room members
-      description: Get all members of a room
+      description: Get all members of a room.
       parameters:
         - name: room_id
           in: path
@@ -152,11 +203,15 @@ paths:
                     joined_at:
                       type: string
                       format: date-time
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
 
   /rooms/{room_id}/messages:
     post:
       summary: Send message
-      description: Send a message to a room
+      description: Send a message to a room.
       parameters:
         - name: room_id
           in: path
@@ -176,16 +231,10 @@ paths:
                   type: string
                   example: "Hello, world!"
                 meta:
-                  type: object
-                  properties:
-                    type:
-                      type: string
-                      example: "text"
-                    mentions:
-                      type: array
-                      items:
-                        type: string
-                      example: ["user2"]
+                  type: string
+                  nullable: true
+                  description: Arbitrary JSON string to attach to the message (e.g. message type, mentions, reactions metadata)
+                  example: '{"type":"text","mentions":["user2"]}'
       responses:
         '200':
           description: Message sent successfully
@@ -201,10 +250,16 @@ paths:
                   created_at:
                     type: string
                     format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
 
     get:
       summary: Get messages
-      description: Retrieve messages from a room
+      description: Retrieve messages from a room.
       parameters:
         - name: room_id
           in: path
@@ -231,27 +286,16 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    message_id:
-                      type: string
-                    sender_id:
-                      type: string
-                    seq:
-                      type: integer
-                    content:
-                      type: string
-                    meta:
-                      type: object
-                      nullable: true
-                    created_at:
-                      type: string
-                      format: date-time
+                  $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
 
   /acks:
     post:
       summary: Acknowledge messages
-      description: Mark messages as delivered up to a specific sequence number
+      description: Mark messages as delivered up to a specific sequence number.
       requestBody:
         required: true
         content:
@@ -279,11 +323,13 @@ paths:
                   success:
                     type: boolean
                     example: true
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
 
   /notify:
     post:
       summary: Send notification
-      description: Send a notification to users or room members
+      description: Send a notification to users or room members.
       requestBody:
         required: true
         content:
@@ -328,11 +374,90 @@ paths:
                   created_at:
                     type: string
                     format: date-time
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+
+  /ws/token:
+    post:
+      summary: Issue WebSocket token
+      description: |
+        Issues a short-lived, single-use WebSocket authentication token for browser clients that cannot set custom HTTP headers.
+
+        After obtaining a token, connect to the WebSocket endpoint with `?token=<token>`. The token is valid for 60 seconds and is consumed on first use.
+      responses:
+        '200':
+          description: Token issued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Single-use WebSocket authentication token
+                    example: "wst_a1b2c3d4e5f6..."
+                  expires_in:
+                    type: integer
+                    description: Token validity period in seconds
+                    example: 60
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+
+  /admin/tenants:
+    post:
+      summary: Create tenant
+      description: |
+        Create a new tenant with an auto-generated API key.
+
+        **Requires `X-Master-Key` header** (not `X-API-Key`). The `api_key` in the response is shown exactly once — store it securely. It is stored as a SHA-256 hash in the database and cannot be retrieved again.
+      security:
+        - MasterKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: "MyCompany"
+      responses:
+        '201':
+          description: Tenant created successfully. The `api_key` field is returned only in this response and will never be shown again.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant_id:
+                    type: string
+                    example: "tenant_abc123"
+                  name:
+                    type: string
+                    example: "MyCompany"
+                  api_key:
+                    type: string
+                    description: Plaintext API key — returned once only. Store it immediately.
+                    example: "sk_abc123def456ghi789jkl012mno345pqr678stu901vwx"
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /admin/dead-letters:
     get:
       summary: Get dead letters
-      description: View failed deliveries (admin endpoint)
+      description: View failed deliveries (admin endpoint).
+      security:
+        - MasterKeyAuth: []
       parameters:
         - name: tenant_id
           in: query
@@ -388,6 +513,8 @@ paths:
                           format: date-time
                         error:
                           type: string
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
 
 components:
   securitySchemes:
@@ -395,14 +522,97 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-      description: Tenant API key for authentication
+      description: Tenant API key for authentication. Stored as a SHA-256 hash server-side; the plaintext key is returned only once at tenant creation.
     UserIdAuth:
       type: apiKey
       in: header
       name: X-User-Id
       description: User identifier for authorization
+    MasterKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Master-Key
+      description: Server-wide master key for administrative operations. Set via the `MASTER_API_KEY` environment variable.
 
   schemas:
+    Room:
+      type: object
+      properties:
+        room_id:
+          type: string
+          example: "room_abc123"
+        type:
+          type: string
+          enum: [dm, group, channel]
+          example: "dm"
+        unique_key:
+          type: string
+          nullable: true
+          example: "dm:user1:user2"
+        name:
+          type: string
+          nullable: true
+          example: "Team Chat"
+        metadata:
+          type: string
+          nullable: true
+          description: Arbitrary JSON string set at room creation. Useful for attaching app-level context such as listing_id, order_id, or other domain data.
+          example: '{"listing_id":"lst_99","order_id":"ord_42"}'
+        last_seq:
+          type: integer
+          example: 42
+        created_at:
+          type: string
+          format: date-time
+
+    CreateRoomRequest:
+      type: object
+      required:
+        - type
+        - members
+      properties:
+        type:
+          type: string
+          enum: [dm, group, channel]
+          example: "dm"
+        members:
+          type: array
+          items:
+            type: string
+          example: ["user1", "user2"]
+        name:
+          type: string
+          example: "Team Chat"
+        metadata:
+          type: string
+          nullable: true
+          description: Arbitrary JSON string to associate with the room. Stored as-is and included in webhook payloads for offline delivery.
+          example: '{"listing_id":"lst_99"}'
+
+    Message:
+      type: object
+      properties:
+        message_id:
+          type: string
+          example: "msg_abc123"
+        sender_id:
+          type: string
+          example: "user1"
+        seq:
+          type: integer
+          example: 41
+        content:
+          type: string
+          example: "Hello, world!"
+        meta:
+          type: string
+          nullable: true
+          description: Arbitrary JSON string attached to the message at send time (e.g. message type, mentions, client metadata).
+          example: '{"type":"text","mentions":["user2"]}'
+        created_at:
+          type: string
+          format: date-time
+
     Error:
       type: object
       properties:
