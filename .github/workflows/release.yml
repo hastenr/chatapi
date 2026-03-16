@@ -7,83 +7,114 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.output }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            output: chatapi-linux-amd64
+
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            output: chatapi-linux-arm64
+            apt_packages: gcc-aarch64-linux-gnu
+            cc: aarch64-linux-gnu-gcc
+
+          - os: macos-12
+            goos: darwin
+            goarch: amd64
+            output: chatapi-macos-amd64
+
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            output: chatapi-macos-arm64
+
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            output: chatapi-windows-amd64.exe
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.22'
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
 
-    - name: Install dependencies
-      run: go mod download
+      - name: Install cross-compiler (Linux ARM64)
+        if: ${{ matrix.apt_packages != '' }}
+        run: sudo apt-get install -y ${{ matrix.apt_packages }}
 
-    - name: Build binaries
-      run: |
-        mkdir -p bin
-        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/chatapi-linux-amd64 ./cmd/chatapi
-        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bin/chatapi-linux-arm64 ./cmd/chatapi
-        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/chatapi-macos-amd64 ./cmd/chatapi
-        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/chatapi-macos-arm64 ./cmd/chatapi
-        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/chatapi-windows-amd64.exe ./cmd/chatapi
+      - name: Set up MinGW (Windows)
+        if: matrix.goos == 'windows'
+        run: echo "C:\msys64\mingw64\bin" >> $GITHUB_PATH
+        shell: bash
 
-    - name: Upload binaries
-      uses: actions/upload-artifact@v4
-      with:
-        name: binaries
-        path: bin/
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+          CC: ${{ matrix.cc }}
+        run: |
+          mkdir -p bin
+          go build -ldflags="-s -w" -o bin/${{ matrix.output }} ./cmd/chatapi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: bin/${{ matrix.output }}
 
   docker:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: hastenr/chatapi
-        tags: |
-          type=ref,event=tag
-          type=raw,value=latest,enable={{is_default_branch}}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: hastenr/chatapi
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
 
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   release:
     needs: [build, docker]
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download binaries
-      uses: actions/download-artifact@v4
-      with:
-        name: binaries
-        path: bin/
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: bin/
+          merge-multiple: true
 
-    - name: Create GitHub release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: bin/*
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: bin/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

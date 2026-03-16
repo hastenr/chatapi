@@ -1,4 +1,7 @@
-.PHONY: build build-all build-linux build-macos build-windows docker-build docker-run clean test
+DOCKER_IMAGE := hastenr/chatapi
+VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "latest")
+
+.PHONY: build build-all build-linux build-macos build-windows docker-build docker-run docker-push clean test
 
 # Build for current platform
 build:
@@ -23,11 +26,16 @@ build-windows:
 
 # Build Docker image
 docker-build:
-	docker build -t chatapi .
+	docker build -t $(DOCKER_IMAGE):$(VERSION) -t $(DOCKER_IMAGE):latest .
 
 # Run Docker container
 docker-run:
-	docker run -p 8080:8080 --env-file .env chatapi
+	docker run -p 8080:8080 --env-file .env $(DOCKER_IMAGE):latest
+
+# Push image to Docker Hub
+docker-push: docker-build
+	docker push $(DOCKER_IMAGE):$(VERSION)
+	docker push $(DOCKER_IMAGE):latest
 
 # Clean build artifacts
 clean:
