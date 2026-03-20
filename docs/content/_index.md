@@ -6,7 +6,7 @@ weight = 1
 
 # ChatAPI
 
-A self-hostable, multitenant messaging and notifications service built in Go — real-time WebSocket delivery, durable store-and-forward, and topic-based push notifications, all in a single binary with SQLite.
+ChatAPI is a real-time messaging system that implements event-log based delivery with per-user offsets, providing at-least-once guarantees, deterministic replay, and ordered message streams per room.
 
 ## Key Features
 
