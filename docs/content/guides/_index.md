@@ -5,115 +5,68 @@ weight: 30
 
 # Guides
 
-Step-by-step guides for integrating and managing ChatAPI in your applications.
+Practical guides for integrating ChatAPI into your applications.
 
-## 🏗️ **Setup & Configuration**
+## Available Guides
 
-### [Setting Up Tenants](/guides/tenants/)
-Learn how to create and manage tenants, configure API keys, and set up multi-tenant environments.
+### [Tenants](/guides/tenants/)
+Create and manage tenants, configure API keys, and set up multi-tenant environments.
 
-### [Database Configuration](/guides/database/)
-Configure SQLite databases, WAL mode, backups, and performance optimization.
+## Quick Reference
 
-### [Deployment](/guides/deployment/)
-Deploy ChatAPI to production with Docker, Kubernetes, or traditional servers.
+The fastest path to a working integration:
 
-## 💬 **Chat Features**
+**1. Create a tenant**
+```bash
+curl -X POST http://localhost:8080/admin/tenants \
+  -H "X-Master-Key: $MASTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "MyApp"}'
+```
 
-### [Creating & Managing Rooms](/guides/rooms/)
-Create different types of chat rooms (DMs, groups, channels) and manage memberships.
+**2. Create a room**
+```bash
+curl -X POST http://localhost:8080/rooms \
+  -H "X-API-Key: $API_KEY" \
+  -H "X-User-Id: user1" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"dm","members":["user1","user2"]}'
+```
 
-### [Sending Messages](/guides/messaging/)
-Implement message sending, formatting, and real-time delivery.
+**3. Connect via WebSocket (Node.js)**
+```typescript
+import { ChatAPI } from '@hastenr/chatapi-sdk';
 
-### [Real-time WebSocket Integration](/guides/websockets/)
-Build real-time chat interfaces with WebSocket connections.
+const client = new ChatAPI({ baseURL, apiKey, userId: 'user1' });
+await client.connect();
+client.on('message', (ev) => console.log(ev.content));
+client.sendMessage('room_abc', 'Hello!');
+```
 
-### [Message Acknowledgments](/guides/acknowledgments/)
-Implement message delivery tracking and acknowledgments.
+**4. Subscribe to notifications**
+```typescript
+await client.subscriptions.subscribe('order.updates');
+client.on('notification', (ev) => {
+  const payload = JSON.parse(ev.payload);
+  console.log(payload.message);
+});
+```
 
-## 🔧 **Advanced Features**
+**5. Send a notification from your backend**
+```bash
+curl -X POST http://localhost:8080/notify \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "order.updates",
+    "payload": { "status": "shipped", "message": "Your order is on its way!" },
+    "targets": { "topic_subscribers": true }
+  }'
+```
 
-### [Notifications System](/guides/notifications/)
-Send notifications to users and integrate with external systems.
+## See Also
 
-### [Rate Limiting](/guides/rate-limiting/)
-Configure and manage API rate limits for different tenants.
-
-### [Monitoring & Health Checks](/guides/monitoring/)
-Set up monitoring, logging, and health check endpoints.
-
-### [Backup & Recovery](/guides/backup/)
-Implement backup strategies and disaster recovery procedures.
-
-## 🛠️ **Integration Examples**
-
-### [JavaScript/TypeScript Client](/guides/javascript-client/)
-Build a complete chat client with React/Vue/Angular.
-
-### [Python Integration](/guides/python-integration/)
-Integrate ChatAPI with Python applications and frameworks.
-
-### [Go Client Library](/guides/go-client/)
-Use ChatAPI from Go applications.
-
-### [Mobile Apps](/guides/mobile/)
-Integrate ChatAPI with React Native or Flutter apps.
-
-## 🚨 **Troubleshooting**
-
-### [Common Issues](/guides/troubleshooting/)
-Solutions to frequently encountered problems.
-
-### [Debugging](/guides/debugging/)
-Debugging techniques and tools for ChatAPI.
-
-### [Performance Tuning](/guides/performance/)
-Optimize ChatAPI for high-throughput scenarios.
-
-### [Log Analysis](/guides/logs/)
-Understanding and analyzing ChatAPI logs.
-
-## 📚 **Best Practices**
-
-### [Security](/guides/security/)
-Security best practices and hardening guidelines.
-
-### [Scalability](/guides/scalability/)
-Scaling ChatAPI for growing user bases.
-
-### [API Design](/guides/api-design/)
-Design patterns for building chat applications.
-
-### [Testing](/guides/testing/)
-Testing strategies for ChatAPI integrations.
-
----
-
-## Quick Navigation
-
-### Getting Started
-- [Tenants Setup](/guides/tenants/)
-- [First Room](/guides/rooms/)
-- [Send Messages](/guides/messaging/)
-
-### Production Ready
-- [Deployment](/guides/deployment/)
-- [Monitoring](/guides/monitoring/)
-- [Security](/guides/security/)
-
-### Advanced Topics
-- [WebSocket Integration](/guides/websockets/)
-- [Rate Limiting](/guides/rate-limiting/)
-- [Performance Tuning](/guides/performance/)
-
-## Need Help?
-
-- **Documentation Issues**: [Open an issue](https://github.com/hastenr/chatapi/issues) on GitHub
-- **Community Support**: [GitHub Discussions](https://github.com/hastenr/chatapi/discussions)
-- **Professional Support**: Contact the maintainers for enterprise support options
-
----
-
-*Guides are continuously updated. Check back regularly for new content and improvements.*
-
+- [REST API Reference](/api/rest/) — Full endpoint documentation
+- [WebSocket API Reference](/api/websocket/) — Real-time event reference
+- [Getting Started](/getting-started/) — Installation and configuration
+- [GitHub Issues](https://github.com/hastenr/chatapi/issues) — Report problems or request features

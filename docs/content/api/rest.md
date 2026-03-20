@@ -132,18 +132,20 @@ GET /rooms/{room_id}/members
 
 **Response:**
 ```json
-[
-  {
-    "user_id": "user1",
-    "role": "admin",
-    "joined_at": "2025-12-13T12:00:00Z"
-  },
-  {
-    "user_id": "user2",
-    "role": "member",
-    "joined_at": "2025-12-13T12:05:00Z"
-  }
-]
+{
+  "members": [
+    {
+      "user_id": "user1",
+      "role": "admin",
+      "joined_at": "2025-12-13T12:00:00Z"
+    },
+    {
+      "user_id": "user2",
+      "role": "member",
+      "joined_at": "2025-12-13T12:05:00Z"
+    }
+  ]
+}
 ```
 
 ## Messages
@@ -189,16 +191,18 @@ GET /rooms/{room_id}/messages?after_seq=40&limit=50
 
 **Response:**
 ```json
-[
-  {
-    "message_id": "msg_abc123",
-    "sender_id": "user1",
-    "seq": 41,
-    "content": "Hello, world!",
-    "meta": "{\"type\":\"text\",\"mentions\":[\"user2\"]}",
-    "created_at": "2025-12-13T12:10:00Z"
-  }
-]
+{
+  "messages": [
+    {
+      "message_id": "msg_abc123",
+      "sender_id": "user1",
+      "seq": 41,
+      "content": "Hello, world!",
+      "meta": "{\"type\":\"text\",\"mentions\":[\"user2\"]}",
+      "created_at": "2025-12-13T12:10:00Z"
+    }
+  ]
+}
 ```
 
 ## Delivery & Acknowledgments
@@ -219,12 +223,7 @@ POST /acks
 }
 ```
 
-**Response:**
-```json
-{
-  "success": true
-}
-```
+**Response:** `200 OK` with no body.
 
 ## Notifications
 

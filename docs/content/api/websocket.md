@@ -67,9 +67,8 @@ Tokens are **single-use** and expire after **60 seconds**. If the connection att
 1. **Connect**: Client establishes WebSocket connection
 2. **Authenticate**: Server validates credentials (header or token)
 3. **Register**: Connection registered for real-time events
-4. **Sync**: Server streams missed messages
-5. **Communicate**: Bidirectional message exchange
-6. **Disconnect**: Clean connection termination
+4. **Communicate**: Bidirectional message exchange begins
+5. **Disconnect**: Clean connection termination
 
 ## Message Protocol
 
@@ -251,8 +250,9 @@ Graceful shutdown notification.
 1. **Validation**: Server validates credentials (API key + user ID, or token)
 2. **Registration**: Connection registered for the user
 3. **Presence Broadcast**: Online status sent to room members
-4. **Message Sync**: Missed messages streamed in order
-5. **Subscription**: Automatic subscription to user's rooms
+4. **Subscription**: Automatic subscription to user's rooms
+
+> **Missed messages**: The server does not automatically stream missed messages on reconnect. After reconnecting, fetch missed messages via `GET /rooms/{room_id}/messages?after_seq=<last_seen_seq>` for each room.
 
 ### On Disconnect
 

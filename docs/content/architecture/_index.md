@@ -158,10 +158,21 @@ CREATE TABLE notifications (
   tenant_id TEXT NOT NULL,
   topic TEXT NOT NULL,
   payload JSON NOT NULL,
+  targets JSON NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   status TEXT DEFAULT 'pending',
   attempts INTEGER DEFAULT 0,
   last_attempt_at DATETIME NULL
+);
+
+-- Topic subscriptions (users subscribe to notification topics)
+CREATE TABLE notification_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL,
+  subscriber_id TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(tenant_id, subscriber_id, topic)
 );
 ```
 
@@ -188,6 +199,10 @@ CREATE INDEX idx_undelivered_attempts ON undelivered_messages(tenant_id, attempt
 
 -- Notification processing
 CREATE INDEX idx_notifications_status ON notifications(tenant_id, status, created_at);
+
+-- Subscription lookups
+CREATE INDEX idx_notification_subscriptions_topic ON notification_subscriptions(tenant_id, topic);
+CREATE INDEX idx_notification_subscriptions_subscriber ON notification_subscriptions(tenant_id, subscriber_id);
 ```
 
 ## 🔄 **Data Flow**
@@ -217,8 +232,8 @@ CREATE INDEX idx_notifications_status ON notifications(tenant_id, status, create
 2. **Authentication**: Validate credentials (header-based or token-based)
 3. **Registration**: Add to user's connection pool
 4. **Presence Update**: Broadcast online status to room members
-5. **Message Sync**: Stream missed messages since last ACK
-6. **Real-time Events**: Bidirectional message exchange
+5. **Real-time Events**: Bidirectional message exchange
+6. **Missed Messages**: Client fetches missed messages via `GET /rooms/{room_id}/messages?after_seq=N` (REST)
 7. **Disconnection**: Clean up with grace period for reconnection
 
 ## 🗂️ **Room Metadata**
@@ -314,7 +329,7 @@ Configure `webhook_url` per tenant in the tenant's `config` JSON:
 
 ### Monitoring
 - **Health Endpoint**: `GET /health` — service status and DB writability
-- **Metrics Endpoint**: `GET /metrics` — live counters: `active_connections`, `messages_sent`, `dropped_broadcasts`, `delivery_attempts`, `delivery_failures`, `uptime_seconds`
+- **Metrics Endpoint**: `GET /metrics` — live counters: `active_connections`, `messages_sent`, `broadcast_drops`, `delivery_attempts`, `delivery_failures`, `uptime_seconds`
 - **Structured Logging**: JSON log output via `slog`
 - **Admin Endpoints**: `GET /admin/dead-letters` for failed delivery inspection
 
