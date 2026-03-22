@@ -25,8 +25,10 @@ func New(dsn string) (*DB, error) {
 	}
 
 	// Configure connection pool
-	db.SetMaxOpenConns(1) // SQLite works best with a single writer
-	db.SetMaxIdleConns(1)
+	// SQLite WAL mode supports concurrent readers; allow multiple connections
+	// so background workers don't starve health checks or request handlers.
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
