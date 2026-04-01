@@ -8,8 +8,7 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("LISTEN_ADDR", "")
-	t.Setenv("MASTER_API_KEY", "")
-	t.Setenv("DEFAULT_RATE_LIMIT", "")
+	t.Setenv("JWT_SECRET", "")
 	t.Setenv("ALLOWED_ORIGINS", "")
 
 	cfg, err := config.Load()
@@ -20,11 +19,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ListenAddr != ":8080" {
 		t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, ":8080")
 	}
-	if cfg.DefaultRateLimit != 100 {
-		t.Errorf("DefaultRateLimit = %d, want 100", cfg.DefaultRateLimit)
-	}
-	if cfg.MasterAPIKey != "" {
-		t.Errorf("MasterAPIKey = %q, want empty by default", cfg.MasterAPIKey)
+	if cfg.JWTSecret != "" {
+		t.Errorf("JWTSecret = %q, want empty by default", cfg.JWTSecret)
 	}
 	if len(cfg.AllowedOrigins) != 0 {
 		t.Errorf("AllowedOrigins = %v, want empty by default", cfg.AllowedOrigins)
@@ -33,8 +29,7 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoad_EnvOverridesDefaults(t *testing.T) {
 	t.Setenv("LISTEN_ADDR", ":9090")
-	t.Setenv("MASTER_API_KEY", "secret")
-	t.Setenv("DEFAULT_RATE_LIMIT", "50")
+	t.Setenv("JWT_SECRET", "mysecret")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -44,11 +39,8 @@ func TestLoad_EnvOverridesDefaults(t *testing.T) {
 	if cfg.ListenAddr != ":9090" {
 		t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, ":9090")
 	}
-	if cfg.MasterAPIKey != "secret" {
-		t.Errorf("MasterAPIKey = %q, want %q", cfg.MasterAPIKey, "secret")
-	}
-	if cfg.DefaultRateLimit != 50 {
-		t.Errorf("DefaultRateLimit = %d, want 50", cfg.DefaultRateLimit)
+	if cfg.JWTSecret != "mysecret" {
+		t.Errorf("JWTSecret = %q, want %q", cfg.JWTSecret, "mysecret")
 	}
 }
 
@@ -71,15 +63,15 @@ func TestLoad_AllowedOriginsFromEnv(t *testing.T) {
 	}
 }
 
-func TestValidate_MissingMasterKey(t *testing.T) {
+func TestValidate_MissingJWTSecret(t *testing.T) {
 	cfg := &config.Config{}
 	if err := cfg.Validate(); err == nil {
-		t.Error("Validate() with empty MasterAPIKey: want error, got nil")
+		t.Error("Validate() with empty JWTSecret: want error, got nil")
 	}
 }
 
 func TestValidate_Valid(t *testing.T) {
-	cfg := &config.Config{MasterAPIKey: "secret"}
+	cfg := &config.Config{JWTSecret: "secret"}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate() = %v, want nil", err)
 	}

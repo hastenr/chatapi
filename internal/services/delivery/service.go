@@ -11,7 +11,6 @@ import (
 	"github.com/hastenr/chatapi/internal/models"
 	"github.com/hastenr/chatapi/internal/services/chatroom"
 	"github.com/hastenr/chatapi/internal/services/realtime"
-	"github.com/hastenr/chatapi/internal/services/tenant"
 	"github.com/hastenr/chatapi/internal/services/webhook"
 )
 
@@ -20,8 +19,9 @@ type Service struct {
 	db               *sql.DB
 	realtimeSvc      *realtime.Service
 	chatroomSvc      *chatroom.Service
-	tenantSvc        *tenant.Service
 	webhookSvc       *webhook.Service
+	webhookURL       string
+	webhookSecret    string
 	maxAttempts      int
 	deliveryAttempts atomic.Int64
 	deliveryFailures atomic.Int64
@@ -32,16 +32,18 @@ func NewService(
 	db *sql.DB,
 	realtimeSvc *realtime.Service,
 	chatroomSvc *chatroom.Service,
-	tenantSvc *tenant.Service,
+	webhookURL string,
+	webhookSecret string,
 	webhookSvc *webhook.Service,
 ) *Service {
 	return &Service{
-		db:          db,
-		realtimeSvc: realtimeSvc,
-		chatroomSvc: chatroomSvc,
-		tenantSvc:   tenantSvc,
-		webhookSvc:  webhookSvc,
-		maxAttempts: 5,
+		db:            db,
+		realtimeSvc:   realtimeSvc,
+		chatroomSvc:   chatroomSvc,
+		webhookSvc:    webhookSvc,
+		webhookURL:    webhookURL,
+		webhookSecret: webhookSecret,
+		maxAttempts:   5,
 	}
 }
 
@@ -155,12 +157,6 @@ func (s *Service) HandleNewMessage(tenantID, roomID string, message *models.Mess
 		return
 	}
 
-	cfg, err := s.tenantSvc.GetTenantConfig(tenantID)
-	if err != nil {
-		slog.Warn("HandleNewMessage: failed to get tenant config, webhooks disabled",
-			"tenant_id", tenantID, "error", err)
-	}
-
 	msgInfo := webhook.MessageInfo{
 		MessageID: message.MessageID,
 		SenderID:  message.SenderID,
@@ -187,8 +183,8 @@ func (s *Service) HandleNewMessage(tenantID, roomID string, message *models.Mess
 		}
 
 		// Fire webhook immediately so the app can push a notification
-		if cfg != nil && cfg.WebhookURL != "" {
-			go s.webhookSvc.NotifyOfflineUser(cfg.WebhookURL, cfg.WebhookSecret, tenantID, roomID, member.UserID, room.Metadata, msgInfo)
+		if s.webhookURL != "" {
+			go s.webhookSvc.NotifyOfflineUser(s.webhookURL, s.webhookSecret, tenantID, roomID, member.UserID, room.Metadata, msgInfo)
 		}
 	}
 }

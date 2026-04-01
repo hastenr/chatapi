@@ -29,11 +29,14 @@ type Config struct {
 	// Logging
 	LogLevel             string
 
-	// Rate limiting defaults
-	DefaultRateLimit     int // requests per second per tenant
+	// Auth configuration
+	// JWTSecret is the HS256 secret used to validate tokens issued by the
+	// deployer's backend. Set via JWT_SECRET environment variable.
+	JWTSecret string
 
-	// Admin configuration
-	MasterAPIKey         string
+	// Webhook configuration (fired when a message arrives for an offline user)
+	WebhookURL    string
+	WebhookSecret string
 
 	// WebSocket configuration
 	// Comma-separated list of allowed origins. Use "*" to allow all (dev only).
@@ -44,17 +47,18 @@ type Config struct {
 // Load loads configuration from environment variables with sensible defaults
 func Load() (*Config, error) {
 	cfg := &Config{
-		ListenAddr:           getEnv("LISTEN_ADDR", ":8080"),
-		DataDir:              getEnv("DATA_DIR", "/var/chatapi"),
-		LogDir:               getEnv("LOG_DIR", "/var/log/chatapi"),
-		DatabaseDSN:          getEnv("DATABASE_DSN", "file:chatapi.db?_journal_mode=WAL&_busy_timeout=5000"),
-		LogLevel:             getEnv("LOG_LEVEL", "info"),
-		DefaultRateLimit:     getEnvAsInt("DEFAULT_RATE_LIMIT", 100),
-		RetryMaxAttempts:     getEnvAsInt("RETRY_MAX_ATTEMPTS", 5),
-		ShutdownDrainTimeout: getEnvAsDuration("SHUTDOWN_DRAIN_TIMEOUT", 10*time.Second),
-		WorkerInterval:       getEnvAsDuration("WORKER_INTERVAL", 30*time.Second),
-		RetryInterval:        getEnvAsDuration("RETRY_INTERVAL", 30*time.Second),
-		MasterAPIKey:         getEnv("MASTER_API_KEY", ""),
+		ListenAddr:            getEnv("LISTEN_ADDR", ":8080"),
+		DataDir:               getEnv("DATA_DIR", "/var/chatapi"),
+		LogDir:                getEnv("LOG_DIR", "/var/log/chatapi"),
+		DatabaseDSN:           getEnv("DATABASE_DSN", "file:chatapi.db?_journal_mode=WAL&_busy_timeout=5000"),
+		LogLevel:              getEnv("LOG_LEVEL", "info"),
+		RetryMaxAttempts:      getEnvAsInt("RETRY_MAX_ATTEMPTS", 5),
+		ShutdownDrainTimeout:  getEnvAsDuration("SHUTDOWN_DRAIN_TIMEOUT", 10*time.Second),
+		WorkerInterval:        getEnvAsDuration("WORKER_INTERVAL", 30*time.Second),
+		RetryInterval:         getEnvAsDuration("RETRY_INTERVAL", 30*time.Second),
+		JWTSecret:             getEnv("JWT_SECRET", ""),
+		WebhookURL:            getEnv("WEBHOOK_URL", ""),
+		WebhookSecret:         getEnv("WEBHOOK_SECRET", ""),
 		AllowedOrigins:        getEnvAsStringSlice("ALLOWED_ORIGINS"),
 		MaxConnectionsPerUser: getEnvAsInt("WS_MAX_CONNECTIONS_PER_USER", 5),
 	}
@@ -64,8 +68,8 @@ func Load() (*Config, error) {
 
 // Validate checks that required configuration values are set.
 func (c *Config) Validate() error {
-	if c.MasterAPIKey == "" {
-		return errors.New("MASTER_API_KEY must be set")
+	if c.JWTSecret == "" {
+		return errors.New("JWT_SECRET must be set")
 	}
 	return nil
 }

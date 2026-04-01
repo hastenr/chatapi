@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/hastenr/chatapi/internal/db"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var testDBCounter atomic.Int64
+
+// TestJWTSecret is the shared secret used to sign JWTs in tests.
+const TestJWTSecret = "test-jwt-secret"
 
 // NewTestDB returns a fully migrated in-memory SQLite database.
 // The connection is closed automatically when the test ends.
@@ -38,4 +43,19 @@ func NewTestDB(t *testing.T) *db.DB {
 	t.Cleanup(func() { database.Close() })
 
 	return database
+}
+
+// SignJWT signs a JWT with TestJWTSecret and the given subject (user ID).
+// The token is valid for 5 minutes — long enough for any test.
+func SignJWT(userID string) string {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": userID,
+		"exp": time.Now().Add(5 * time.Minute).Unix(),
+		"iat": time.Now().Unix(),
+	})
+	signed, err := token.SignedString([]byte(TestJWTSecret))
+	if err != nil {
+		panic("testutil.SignJWT: " + err.Error())
+	}
+	return signed
 }
