@@ -5,27 +5,19 @@ weight: 20
 
 # API Reference
 
-ChatAPI provides REST and WebSocket APIs for messaging and notifications. All endpoints require authentication and return JSON.
+ChatAPI provides REST and WebSocket APIs for messaging, bots, and notifications. All endpoints (except `/health` and `/metrics`) require a JWT Bearer token.
 
 ## Authentication
 
-### Standard endpoints
-
 ```
-X-API-Key: <your-tenant-api-key>
-X-User-Id: <user-identifier>
+Authorization: Bearer <jwt>
 ```
 
-- **X-API-Key** — Identifies your tenant. Keys are stored as SHA-256 hashes; the plaintext is returned only once at tenant creation.
-- **X-User-Id** — Identifies the user making the request.
+Your backend signs JWTs with `JWT_SECRET`. The `sub` claim is the user ID for the request. There are no API keys, no master keys, and no session tokens.
 
-### Admin endpoints
-
-```
-X-Master-Key: <your-master-api-key>
-```
-
-Used only for `POST /admin/tenants`. Set via `MASTER_API_KEY` env var.
+**WebSocket connections** accept:
+- `?token=<jwt>` query parameter — for browser clients
+- `Authorization: Bearer <jwt>` header — for server-side clients
 
 ## REST API
 
@@ -35,25 +27,29 @@ Used only for `POST /admin/tenants`. Set via `MASTER_API_KEY` env var.
 | `POST` | `/rooms` | Create a room (DM, group, or channel) |
 | `GET` | `/rooms/{room_id}` | Get room details |
 | `GET` | `/rooms/{room_id}/members` | List room members |
+| `POST` | `/rooms/{room_id}/members` | Add a member (or bot) to a room |
 | `POST` | `/rooms/{room_id}/messages` | Send a message |
 | `GET` | `/rooms/{room_id}/messages` | Get messages (paginated) |
 | `POST` | `/acks` | Acknowledge message delivery |
+| `POST` | `/bots` | Register a bot |
+| `GET` | `/bots` | List bots |
+| `GET` | `/bots/{bot_id}` | Get a bot |
+| `DELETE` | `/bots/{bot_id}` | Delete a bot |
 | `POST` | `/notify` | Send a notification to users or topic subscribers |
-| `POST` | `/subscriptions` | Subscribe the authenticated user to a notification topic |
+| `POST` | `/subscriptions` | Subscribe the current user to a notification topic |
 | `GET` | `/subscriptions` | List the user's notification subscriptions |
 | `DELETE` | `/subscriptions/{id}` | Unsubscribe |
-| `POST` | `/ws/token` | Issue a short-lived WebSocket token (browser clients) |
-| `GET` | `/health` | Service health check |
-| `GET` | `/metrics` | Live server counters |
-| `POST` | `/admin/tenants` | Create a tenant (`X-Master-Key` required) |
-| `GET` | `/admin/dead-letters` | View failed deliveries |
+| `GET` | `/health` | Service health check (no auth) |
+| `GET` | `/metrics` | Live server counters (no auth) |
 
 ## WebSocket API
 
-Connect to `/ws` with either:
+Connect to `/ws` with a JWT:
 
-- **Token** (browser): `GET /ws?token=<ws-token>` — obtain via `POST /ws/token` first
-- **Header** (Node.js / server): pass `X-API-Key` + `X-User-Id` in the WebSocket upgrade request
+```
+ws://localhost:8080/ws?token=<jwt>        # browser
+ws://localhost:8080/ws                    # server (Authorization header)
+```
 
 ### Client → Server events
 
@@ -68,11 +64,14 @@ Connect to `/ws` with either:
 | `type` | Description |
 |--------|-------------|
 | `message` | New message in a room |
+| `message.stream.start` | LLM bot response starting |
+| `message.stream.delta` | Token chunk from LLM stream |
+| `message.stream.end` | Stream complete, message persisted |
 | `ack.received` | Another user acknowledged messages |
 | `typing` | Another user's typing status |
 | `presence.update` | User came online or went offline |
 | `notification` | Topic-based notification delivered to subscriber |
-| `server.shutdown` | Server is restarting — reconnect after `reconnect_after_ms` ms |
+| `server.shutdown` | Server is restarting |
 
 ## SDK
 
@@ -87,34 +86,16 @@ import { ChatAPI } from '@hastenr/chatapi-sdk';
 
 const client = new ChatAPI({
   baseURL: 'https://your-chatapi.com',
-  apiKey: 'your-api-key',
-  userId: 'user123',
-  displayName: 'Alice',
+  token: '<your-signed-jwt>',
 });
 
 await client.connect();
 
-// Messaging
 client.on('message', (ev) => console.log(ev.content));
-client.sendMessage('room_abc', 'Hello!');
-
-// Notifications
-await client.subscriptions.subscribe('order.updates');
-client.on('notification', (ev) => {
-  const payload = JSON.parse(ev.payload);
-  console.log(payload.message);
-});
+client.rooms.sendMessage('room_abc', 'Hello!');
 ```
-
-See the [npm page](https://www.npmjs.com/package/@hastenr/chatapi-sdk) for the full SDK reference.
-
-## Rate Limiting
-
-- Default: 100 requests/second per tenant (configurable via `DEFAULT_RATE_LIMIT`)
-- Exceeded requests return `429` with a `Retry-After: 60` header
 
 ## Reference
 
 - [REST API Reference](/api/rest/) — Full endpoint documentation with examples
 - [WebSocket API Reference](/api/websocket/) — Full event reference
-- [API Playground](/api/playground/) — Interactive Swagger UI

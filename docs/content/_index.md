@@ -31,7 +31,7 @@ Self-hosted, open-source chat infrastructure for AI-powered apps. Single binary,
 ### Run from source
 
 ```bash
-git clone https://github.com/byabasaija/chatapi.git
+git clone https://github.com/hastenr/chatapi.git
 cd chatapi
 go mod download
 go build -o bin/chatapi ./cmd/chatapi
@@ -51,7 +51,7 @@ docker run -d \
   -e ALLOWED_ORIGINS="*" \
   -v chatapi-data:/data \
   -e DATABASE_DSN="file:/data/chatapi.db?_journal_mode=WAL&_busy_timeout=5000" \
-  byabasaija/chatapi:latest
+  hastenr/chatapi:latest
 ```
 
 ### Connect your first client
@@ -82,5 +82,5 @@ curl -X POST http://localhost:8080/rooms \
 
 ## Links
 
-- [GitHub](https://github.com/byabasaija/chatapi)
-- [Issues](https://github.com/byabasaija/chatapi/issues)
+- [GitHub](https://github.com/hastenr/chatapi)
+- [Issues](https://github.com/hastenr/chatapi/issues)

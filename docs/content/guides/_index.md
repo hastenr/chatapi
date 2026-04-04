@@ -9,58 +9,58 @@ Practical guides for integrating ChatAPI into your applications.
 
 ## Available Guides
 
-### [Tenants](/guides/tenants/)
-Create and manage tenants, configure API keys, and set up multi-tenant environments.
+### [AI Bots](/guides/bots/)
+Register LLM-backed bots, add them to rooms, and stream responses to users in real time. Works with OpenAI, Anthropic, Ollama, and any OpenAI-compatible endpoint.
 
 ## Quick Reference
 
 The fastest path to a working integration:
 
-**1. Create a tenant**
+**1. Start the server**
 ```bash
-curl -X POST http://localhost:8080/admin/tenants \
-  -H "X-Master-Key: $MASTER_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "MyApp"}'
+export JWT_SECRET=$(openssl rand -base64 32)
+export ALLOWED_ORIGINS="*"
+./bin/chatapi
 ```
 
-**2. Create a room**
+**2. Mint a JWT for a user** (your backend does this)
+```go
+claims := jwt.MapClaims{"sub": "user1", "exp": time.Now().Add(24 * time.Hour).Unix()}
+token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+signed, _ := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+```
+
+**3. Create a room**
 ```bash
 curl -X POST http://localhost:8080/rooms \
-  -H "X-API-Key: $API_KEY" \
-  -H "X-User-Id: user1" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"type":"dm","members":["user1","user2"]}'
 ```
 
-**3. Connect via WebSocket (Node.js)**
-```typescript
-import { ChatAPI } from '@hastenr/chatapi-sdk';
-
-const client = new ChatAPI({ baseURL, apiKey, userId: 'user1' });
-await client.connect();
-client.on('message', (ev) => console.log(ev.content));
-client.sendMessage('room_abc', 'Hello!');
+**4. Connect via WebSocket (browser)**
+```javascript
+const ws = new WebSocket(`ws://localhost:8080/ws?token=${jwt}`);
+ws.onmessage = (event) => console.log(JSON.parse(event.data));
 ```
 
-**4. Subscribe to notifications**
-```typescript
-await client.subscriptions.subscribe('order.updates');
-client.on('notification', (ev) => {
-  const payload = JSON.parse(ev.payload);
-  console.log(payload.message);
-});
+**5. Subscribe to notifications**
+```bash
+curl -X POST http://localhost:8080/subscriptions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "order.updates"}'
 ```
 
-**5. Send a notification from your backend**
+**6. Send a notification from your backend**
 ```bash
 curl -X POST http://localhost:8080/notify \
-  -H "X-API-Key: $API_KEY" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "topic": "order.updates",
-    "payload": { "status": "shipped", "message": "Your order is on its way!" },
-    "targets": { "topic_subscribers": true }
+    "payload": {"status": "shipped", "message": "Your order is on its way!"},
+    "targets": {"topic_subscribers": true}
   }'
 ```
 
