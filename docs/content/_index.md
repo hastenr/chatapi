@@ -77,6 +77,7 @@ curl -X POST http://localhost:8080/rooms \
 - [Getting Started](/getting-started/) — Installation, configuration, and first API call
 - [REST API](/api/rest/) — HTTP endpoint reference
 - [WebSocket API](/api/websocket/) — Real-time event reference
+- [TypeScript SDK](/sdk/) — `npm install @hastenr/chatapi-sdk`
 - [Architecture](/architecture/) — System design and database schema
 - [AI Bots](/guides/bots/) — Register bots and stream LLM responses
 
