@@ -1,0 +1,177 @@
+# ChatAPI
+
+Self-hosted, open-source chat infrastructure for AI-powered apps. Single binary, SQLite, JWT auth. Think self-hosted Sendbird or Stream Chat — designed for apps where one or more participants is an AI.
+
+Source: https://github.com/hastenr/chatapi
+Docs: https://docs.chatapi.cloud
+
+## What ChatAPI is
+
+ChatAPI is a Go binary that gives your app:
+- Real-time messaging over WebSocket (DM, group, channel rooms)
+- AI bots as first-class room participants
+- LLM response streaming token-by-token (OpenAI, Anthropic, Ollama, any OpenAI-compatible endpoint)
+- JWT authentication — your backend signs tokens, ChatAPI validates them
+- At-least-once delivery with retry for offline users
+- Topic-based push notifications over WebSocket
+- Room metadata — attach arbitrary JSON to rooms (order IDs, ticket IDs, listing IDs, etc.)
+
+ChatAPI is NOT an LLM framework. It is the real-time messaging layer between your AI agent and your users.
+
+## Authentication
+
+All REST endpoints except GET /health and GET /metrics require:
+  Authorization: Bearer <jwt>
+
+JWTs must be HS256 signed using JWT_SECRET. The `sub` claim is the user ID.
+
+WebSocket connections accept:
+- Browser: wss://host/ws?token=<jwt>
+- Server: Authorization: Bearer <jwt> header during upgrade
+
+There are no API keys, no master keys, no sessions, no POST /ws/token endpoint.
+
+## Configuration (environment variables)
+
+JWT_SECRET          — required. HS256 signing secret.
+LISTEN_ADDR         — default :8080
+DATABASE_DSN        — default file:chatapi.db?_journal_mode=WAL&_busy_timeout=5000
+ALLOWED_ORIGINS     — comma-separated CORS/WS origins. Use * for local dev.
+WS_MAX_CONNECTIONS_PER_USER — default 5
+WORKER_INTERVAL     — default 30s
+SHUTDOWN_DRAIN_TIMEOUT — default 10s
+
+## REST API
+
+Authentication: Authorization: Bearer <jwt> on all endpoints except /health and /metrics.
+Error shape: {"error": "code", "message": "human message"}
+
+### Health
+GET /health → {"status":"ok","db_writable":true}  — 503 if DB unreachable
+GET /metrics → {"active_connections":N,"messages_sent":N,"broadcast_drops":N,"delivery_attempts":N,"delivery_failures":N,"uptime_seconds":N}
+
+### Rooms
+GET    /rooms                          — list rooms the current user belongs to
+POST   /rooms                          — create room. Body: {"type":"dm"|"group"|"channel","members":["id1","id2"],"name":"optional","metadata":"optional json string"}. DMs are deduplicated by member pair.
+GET    /rooms/{room_id}                — get room. 403 if not a member.
+PATCH  /rooms/{room_id}               — update name or metadata. Body: {"name":"new","metadata":"json"}
+GET    /rooms/{room_id}/members        — list members → {"members":[{"user_id":"...","role":"member","joined_at":"..."}]}
+POST   /rooms/{room_id}/members        — add member (or bot). Body: {"user_id":"..."}
+DELETE /rooms/{room_id}/members/{user_id} — remove member
+
+### Messages
+GET  /rooms/{room_id}/messages?after_seq=N&limit=50 — get messages. after_seq defaults to 0. limit max 100.
+POST /rooms/{room_id}/messages         — send message. Body: {"content":"...","meta":"optional json string"}. Returns: {"message_id":"...","seq":N,"created_at":"..."}
+PUT  /rooms/{room_id}/messages/{message_id} — edit message (sender only). Body: {"content":"..."}
+DELETE /rooms/{room_id}/messages/{message_id} — delete message (sender only)
+
+### Acknowledgments
+POST /acks  — Body: {"room_id":"...","seq":N}  — marks messages delivered up to seq
+
+### Notifications
+POST /notify — send notification. Body: {"topic":"...","payload":{...},"targets":{"user_ids":["..."],"room_id":"...","topic_subscribers":true}}
+POST /subscriptions    — subscribe current user to topic. Body: {"topic":"..."}
+GET  /subscriptions    — list current user's subscriptions
+DELETE /subscriptions/{id} — unsubscribe
+
+### Bots
+POST   /bots           — register bot. Body: {"name":"...","mode":"llm"|"external","provider":"openai"|"anthropic","base_url":"optional","model":"...","api_key":"...","system_prompt":"...","max_context":20}
+GET    /bots           — list bots
+GET    /bots/{bot_id}  — get bot
+DELETE /bots/{bot_id}  — delete bot
+
+After registering a bot, add it to a room via POST /rooms/{room_id}/members with {"user_id":"<bot_id>"}.
+
+### Admin
+GET /admin/dead-letters — view failed undelivered messages and notifications
+
+## WebSocket API
+
+Connect: wss://host/ws?token=<jwt>
+
+All frames are JSON with a `type` field.
+
+### Client → Server
+
+send_message:   {"type":"send_message","data":{"room_id":"...","content":"...","meta":"optional"}}
+ack:            {"type":"ack","data":{"room_id":"...","seq":N}}
+typing.start:   {"type":"typing.start","data":{"room_id":"..."}}
+typing.stop:    {"type":"typing.stop","data":{"room_id":"..."}}
+ping:           {"type":"ping"}
+
+### Server → Client
+
+message:              {"type":"message","room_id":"...","seq":N,"message_id":"...","sender_id":"...","content":"...","meta":null,"created_at":"..."}
+message.stream.start: {"type":"message.stream.start","room_id":"...","message_id":"...","sender_id":"..."}
+message.stream.delta: {"type":"message.stream.delta","room_id":"...","message_id":"...","delta":"token chunk"}
+message.stream.end:   {"type":"message.stream.end","room_id":"...","message_id":"...","content":"full text","seq":N}
+ack.received:         {"type":"ack.received","room_id":"...","seq":N,"user_id":"..."}
+presence.update:      {"type":"presence.update","user_id":"...","status":"online"|"offline"}
+typing:               {"type":"typing","room_id":"...","user_id":"...","action":"start"|"stop"}
+notification:         {"type":"notification","notification_id":"...","topic":"...","payload":"json string","timestamp":N}
+server.shutdown:      {"type":"server.shutdown","reconnect_after_ms":N}
+
+After reconnect, fetch missed messages: GET /rooms/{id}/messages?after_seq=<last_known_seq>
+
+## TypeScript SDK
+
+npm install @hastenr/chatapi-sdk
+
+```typescript
+import { ChatAPI } from '@hastenr/chatapi-sdk';
+
+const client = new ChatAPI({ baseURL: 'https://your-chatapi.com', token: '<jwt>' });
+await client.connect();
+
+// Rooms
+const room = await client.rooms.create({ type: 'dm', members: ['alice', 'bot_id'] });
+await client.rooms.addMember(room.room_id, 'charlie');
+
+// Messages
+client.sendMessage(room.room_id, 'Hello');                         // WebSocket
+await client.messages.send(room.room_id, 'Hello');                 // REST
+const history = await client.messages.get(room.room_id, { after_seq: 0 });
+
+// Events
+client.on('message', (e) => console.log(e.content));
+client.on('message.stream.start', (e) => { /* bot started */ });
+client.on('message.stream.delta', (e) => process.stdout.write(e.delta));
+client.on('message.stream.end', (e) => console.log(e.content));
+client.on('presence.update', (e) => console.log(e.user_id, e.status));
+
+// Bots
+const bot = await client.bots.create({ name: 'Assistant', mode: 'llm', provider: 'openai', model: 'gpt-4o', api_key: 'sk-...', system_prompt: 'You are helpful.' });
+await client.rooms.addMember(room.room_id, bot.bot_id);
+
+// Notifications
+await client.subscriptions.subscribe('order.updates');
+client.on('notification', (e) => console.log(JSON.parse(e.payload)));
+```
+
+## LLM bot streaming flow
+
+1. User sends a message to a room that has an llm-mode bot as a member
+2. ChatAPI fetches the last max_context messages as conversation history
+3. ChatAPI calls the LLM provider (streaming if supported)
+4. Tokens are broadcast as message.stream.delta events to all online room members
+5. When complete, the full message is stored and message.stream.end is broadcast with seq
+6. Clients that missed the stream can fetch the completed message via GET /rooms/{id}/messages?after_seq=N
+
+## Typical integration pattern (AI customer support widget)
+
+Backend:
+1. On widget open, mint a JWT: sub = session or user ID, signed with JWT_SECRET
+2. Call POST /rooms with type=group, members=[userId, botId], metadata={"page":"/pricing"}
+3. Return {token, room_id} to the frontend
+
+Frontend:
+1. new ChatAPI({ baseURL, token })
+2. await client.connect()
+3. Listen for message and message.stream.* events to render chat
+4. Call client.sendMessage(room_id, userInput) on submit
+
+## Scaling
+
+Single instance (default): SQLite WAL mode, no external dependencies.
+PostgreSQL: Implement repository interfaces in internal/repository/postgres/ — no service changes.
+Horizontal: Implement broker.Broker backed by Redis pub/sub in internal/broker/redis/ — no service changes.
