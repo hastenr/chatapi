@@ -42,7 +42,7 @@ cp .env.example .env
 | `WEBHOOK_URL` | *(none)* | Your backend URL called when a message arrives for an offline user. Leave blank to disable. |
 | `WEBHOOK_SECRET` | *(none)* | HMAC-SHA256 secret for verifying webhook calls from ChatAPI. |
 | `LISTEN_ADDR` | `:8080` | Server listen address |
-| `DATABASE_DSN` | `file:./chatapi.db?_journal_mode=WAL&_busy_timeout=5000` | SQLite connection string. Use an absolute path in Docker. |
+| `DATABASE_DSN` | `file:./chatapi.db` | SQLite connection string. Use an absolute path in Docker. |
 | `RATE_LIMIT_MESSAGES` | `10` | Sustained message sends per second per user. Set to `0` to disable. |
 | `RATE_LIMIT_MESSAGES_BURST` | `20` | Burst allowance on top of the sustained rate. |
 
@@ -182,7 +182,7 @@ export LISTEN_ADDR=":3000"
 ```bash
 mkdir -p ./data
 chmod 755 ./data
-export DATABASE_DSN="file:./data/chatapi.db?_journal_mode=WAL&_busy_timeout=5000"
+export DATABASE_DSN="file:./data/chatapi.db"
 ```
 
 **Build errors:**

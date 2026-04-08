@@ -50,7 +50,7 @@ docker run -d \
   -e JWT_SECRET=$(openssl rand -base64 32) \
   -e ALLOWED_ORIGINS="*" \
   -v chatapi-data:/data \
-  -e DATABASE_DSN="file:/data/chatapi.db?_journal_mode=WAL&_busy_timeout=5000" \
+  -e DATABASE_DSN="file:/data/chatapi.db" \
   hastenr/chatapi:latest
 ```
 

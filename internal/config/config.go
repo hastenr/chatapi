@@ -47,7 +47,7 @@ type Config struct {
 func Load() (*Config, error) {
 	cfg := &Config{
 		ListenAddr:            getEnv("LISTEN_ADDR", ":8080"),
-		DatabaseDSN:           getEnv("DATABASE_DSN", "file:./chatapi.db?_journal_mode=WAL&_busy_timeout=5000"),
+		DatabaseDSN:           getEnv("DATABASE_DSN", "file:./chatapi.db"),
 		RetryMaxAttempts:      getEnvAsInt("RETRY_MAX_ATTEMPTS", 5),
 		ShutdownDrainTimeout:  getEnvAsDuration("SHUTDOWN_DRAIN_TIMEOUT", 10*time.Second),
 		WorkerInterval:        getEnvAsDuration("WORKER_INTERVAL", 30*time.Second),
