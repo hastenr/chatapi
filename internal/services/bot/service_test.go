@@ -15,8 +15,6 @@ import (
 	"github.com/hastenr/chatapi/internal/testutil"
 )
 
-const testTenantID = "default"
-
 func newBotSvc(t *testing.T) (*bot.Service, *message.Service, *chatroom.Service) {
 	t.Helper()
 	db := testutil.NewTestDB(t)
@@ -227,45 +225,45 @@ func TestIsBot_False(t *testing.T) {
 func TestTriggerBots_SkipsBotSender(t *testing.T) {
 	svc, messageSvc, chatroomSvc := newBotSvc(t)
 
-	room, _ := chatroomSvc.CreateRoom(testTenantID, &models.CreateRoomRequest{
+	room, _ := chatroomSvc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"user1", "user2"},
 	})
 
 	b, _ := svc.CreateBot(&models.CreateBotRequest{Name: "Bot", Mode: "external"})
-	chatroomSvc.AddMember(testTenantID, room.RoomID, b.BotID)
+	chatroomSvc.AddMember(room.RoomID, b.BotID)
 
 	// Message sent by the bot itself — should not trigger any bots
-	msg, _ := messageSvc.SendMessage(testTenantID, room.RoomID, b.BotID, &models.CreateMessageRequest{Content: "I am a bot"})
+	msg, _ := messageSvc.SendMessage(room.RoomID, b.BotID, &models.CreateMessageRequest{Content: "I am a bot"})
 
 	// TriggerBots must not panic and must return without doing anything
-	svc.TriggerBots(testTenantID, room.RoomID, msg)
+	svc.TriggerBots(room.RoomID, msg)
 }
 
 func TestTriggerBots_HumanMessage_NoBotInRoom(t *testing.T) {
 	svc, messageSvc, chatroomSvc := newBotSvc(t)
 
-	room, _ := chatroomSvc.CreateRoom(testTenantID, &models.CreateRoomRequest{
+	room, _ := chatroomSvc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "humans only", Members: []string{"alice", "bob"},
 	})
 
-	msg, _ := messageSvc.SendMessage(testTenantID, room.RoomID, "alice", &models.CreateMessageRequest{Content: "hello"})
+	msg, _ := messageSvc.SendMessage(room.RoomID, "alice", &models.CreateMessageRequest{Content: "hello"})
 
 	// Should not panic; no bots to trigger
-	svc.TriggerBots(testTenantID, room.RoomID, msg)
+	svc.TriggerBots(room.RoomID, msg)
 }
 
 func TestTriggerBots_ExternalBotNotAutoTriggered(t *testing.T) {
 	svc, messageSvc, chatroomSvc := newBotSvc(t)
 
-	room, _ := chatroomSvc.CreateRoom(testTenantID, &models.CreateRoomRequest{
+	room, _ := chatroomSvc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "room", Members: []string{"alice", "bob"},
 	})
 
 	extBot, _ := svc.CreateBot(&models.CreateBotRequest{Name: "Ext", Mode: "external"})
-	chatroomSvc.AddMember(testTenantID, room.RoomID, extBot.BotID)
+	chatroomSvc.AddMember(room.RoomID, extBot.BotID)
 
-	msg, _ := messageSvc.SendMessage(testTenantID, room.RoomID, "alice", &models.CreateMessageRequest{Content: "hey"})
+	msg, _ := messageSvc.SendMessage(room.RoomID, "alice", &models.CreateMessageRequest{Content: "hey"})
 
 	// External bots are not auto-triggered — TriggerBots should silently skip
-	svc.TriggerBots(testTenantID, room.RoomID, msg)
+	svc.TriggerBots(room.RoomID, msg)
 }

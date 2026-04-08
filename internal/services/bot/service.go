@@ -106,13 +106,13 @@ func (s *Service) IsBot(userID string) bool {
 
 // TriggerBots finds LLM-mode bot members in the room and starts their response goroutines.
 // Call this after a message has been stored and broadcast. Safe to call concurrently.
-func (s *Service) TriggerBots(tenantID, roomID string, msg *models.Message) {
+func (s *Service) TriggerBots(roomID string, msg *models.Message) {
 	// Don't let bots trigger other bots (prevents loops).
 	if s.IsBot(msg.SenderID) {
 		return
 	}
 
-	members, err := s.chatroomSvc.GetRoomMembers(tenantID, roomID)
+	members, err := s.chatroomSvc.GetRoomMembers(roomID)
 	if err != nil {
 		slog.Error("TriggerBots: failed to get room members", "room_id", roomID, "error", err)
 		return
@@ -129,21 +129,21 @@ func (s *Service) TriggerBots(tenantID, roomID string, msg *models.Message) {
 		if bot.Mode != "llm" {
 			continue // external bots manage themselves
 		}
-		go s.runBot(bot, tenantID, roomID)
+		go s.runBot(bot, roomID)
 	}
 }
 
 // runBot fetches room history, calls the LLM, streams tokens via WebSocket,
 // then stores and delivers the final message.
-func (s *Service) runBot(bot *models.Bot, tenantID, roomID string) {
-	history, err := s.messageSvc.GetMessages(tenantID, roomID, 0, bot.MaxContext)
+func (s *Service) runBot(bot *models.Bot, roomID string) {
+	history, err := s.messageSvc.GetMessages(roomID, 0, bot.MaxContext)
 	if err != nil {
 		slog.Error("runBot: failed to get messages", "bot_id", bot.BotID, "error", err)
 		return
 	}
 
 	streamID := uuid.New().String()
-	s.realtimeSvc.BroadcastToRoom(tenantID, roomID, map[string]interface{}{
+	s.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 		"type":      "message.stream.start",
 		"stream_id": streamID,
 		"room_id":   roomID,
@@ -165,7 +165,7 @@ func (s *Service) runBot(bot *models.Bot, tenantID, roomID string) {
 	var sb strings.Builder
 	for token := range tokenCh {
 		sb.WriteString(token)
-		s.realtimeSvc.BroadcastToRoom(tenantID, roomID, map[string]interface{}{
+		s.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 			"type":      "message.stream.delta",
 			"stream_id": streamID,
 			"delta":     token,
@@ -174,7 +174,7 @@ func (s *Service) runBot(bot *models.Bot, tenantID, roomID string) {
 
 	if streamErr != nil {
 		slog.Error("runBot: LLM call failed", "bot_id", bot.BotID, "error", streamErr)
-		s.realtimeSvc.BroadcastToRoom(tenantID, roomID, map[string]interface{}{
+		s.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 			"type":      "message.stream.error",
 			"stream_id": streamID,
 			"error":     "LLM call failed",
@@ -187,7 +187,7 @@ func (s *Service) runBot(bot *models.Bot, tenantID, roomID string) {
 		return
 	}
 
-	stored, err := s.messageSvc.SendMessage(tenantID, roomID, bot.BotID, &models.CreateMessageRequest{
+	stored, err := s.messageSvc.SendMessage(roomID, bot.BotID, &models.CreateMessageRequest{
 		Content: content,
 	})
 	if err != nil {
@@ -195,7 +195,7 @@ func (s *Service) runBot(bot *models.Bot, tenantID, roomID string) {
 		return
 	}
 
-	s.realtimeSvc.BroadcastToRoom(tenantID, roomID, map[string]interface{}{
+	s.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 		"type":       "message.stream.end",
 		"stream_id":  streamID,
 		"message_id": stored.MessageID,
@@ -205,7 +205,7 @@ func (s *Service) runBot(bot *models.Bot, tenantID, roomID string) {
 		"created_at": stored.CreatedAt.Format(time.RFC3339),
 	})
 
-	go s.deliverySvc.HandleNewMessage(tenantID, roomID, stored)
+	go s.deliverySvc.HandleNewMessage(roomID, stored)
 }
 
 // --- LLM providers ---

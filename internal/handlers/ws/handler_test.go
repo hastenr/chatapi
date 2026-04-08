@@ -118,7 +118,7 @@ func TestWSHandler_ValidTokenQueryParam(t *testing.T) {
 	}
 	defer conn.Close()
 
-	if !env.realtimeSvc.IsUserOnline("default", "user1") {
+	if !env.realtimeSvc.IsUserOnline("user1") {
 		t.Error("user1 is not online after connecting")
 	}
 }
@@ -137,7 +137,7 @@ func TestWSHandler_ValidTokenAuthHeader(t *testing.T) {
 	}
 	defer conn.Close()
 
-	if !env.realtimeSvc.IsUserOnline("default", "user2") {
+	if !env.realtimeSvc.IsUserOnline("user2") {
 		t.Error("user2 is not online after connecting")
 	}
 }
@@ -152,7 +152,7 @@ func TestWSHandler_DisconnectUpdatesPresence(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	if !env.realtimeSvc.IsUserOnline("default", "user1") {
+	if !env.realtimeSvc.IsUserOnline("user1") {
 		t.Error("user1 not online after connect")
 	}
 
@@ -226,7 +226,7 @@ func TestWSHandler_MultipleConnectionsSameUser(t *testing.T) {
 	}
 	defer conn2.Close()
 
-	if !env.realtimeSvc.IsUserOnline("default", "user1") {
+	if !env.realtimeSvc.IsUserOnline("user1") {
 		t.Error("user1 not online with two connections")
 	}
 }
@@ -236,7 +236,7 @@ func TestWSHandler_MultipleConnectionsSameUser(t *testing.T) {
 func TestRealtimeSvc_IsUserOnlineIntegration(t *testing.T) {
 	env := newWSEnv(t)
 
-	if env.realtimeSvc.IsUserOnline("default", "user1") {
+	if env.realtimeSvc.IsUserOnline("user1") {
 		t.Error("user1 should be offline before connecting")
 	}
 
@@ -245,7 +245,7 @@ func TestRealtimeSvc_IsUserOnlineIntegration(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	if !env.realtimeSvc.IsUserOnline("default", "user1") {
+	if !env.realtimeSvc.IsUserOnline("user1") {
 		t.Error("user1 should be online after connecting")
 	}
 
@@ -257,7 +257,7 @@ func TestRealtimeSvc_IsUserOnlineIntegration(t *testing.T) {
 func TestRealtimeSvc_GetOnlineUsers(t *testing.T) {
 	env := newWSEnv(t)
 
-	before := env.realtimeSvc.GetOnlineUsers("default")
+	before := env.realtimeSvc.GetOnlineUsers()
 	if len(before) != 0 {
 		t.Errorf("online users before connect = %d, want 0", len(before))
 	}
@@ -274,7 +274,7 @@ func TestRealtimeSvc_GetOnlineUsers(t *testing.T) {
 	}
 	defer conn2.Close()
 
-	online := env.realtimeSvc.GetOnlineUsers("default")
+	online := env.realtimeSvc.GetOnlineUsers()
 	if len(online) != 2 {
 		t.Errorf("online users = %d, want 2", len(online))
 	}

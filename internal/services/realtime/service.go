@@ -19,8 +19,8 @@ type Service struct {
 	mu                    sync.RWMutex
 	roomRepo              repository.RoomRepository
 	broker                broker.Broker
-	connections           map[string]map[string][]*websocket.Conn // tenant -> user -> connections
-	presence              map[string]map[string]time.Time         // tenant -> user -> last seen
+	connections           map[string][]*websocket.Conn // user -> connections
+	presence              map[string]time.Time         // user -> last seen
 	shutdownCh            chan struct{}
 	shutdownOnce          sync.Once
 	maxConnectionsPerUser int
@@ -33,139 +33,97 @@ func NewService(roomRepo repository.RoomRepository, maxConnectionsPerUser int) *
 		maxConnectionsPerUser = 5
 	}
 	s := &Service{
-		roomRepo:             roomRepo,
-		connections:          make(map[string]map[string][]*websocket.Conn),
-		presence:             make(map[string]map[string]time.Time),
-		shutdownCh:           make(chan struct{}),
+		roomRepo:              roomRepo,
+		connections:           make(map[string][]*websocket.Conn),
+		presence:              make(map[string]time.Time),
+		shutdownCh:            make(chan struct{}),
 		maxConnectionsPerUser: maxConnectionsPerUser,
 	}
-
-	// Create the broker with this service's deliverToRoom as the delivery function
 	s.broker = broker.NewLocalBroker(s.deliverToRoom)
-
-	// Start presence cleanup worker
 	go s.presenceCleanupWorker()
-
 	return s
 }
 
 // RegisterConnection registers a new WebSocket connection for a user.
-// Returns an error if the user has reached the per-user connection limit.
-func (s *Service) RegisterConnection(tenantID, userID string, conn *websocket.Conn) error {
+func (s *Service) RegisterConnection(userID string, conn *websocket.Conn) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.connections[tenantID] == nil {
-		s.connections[tenantID] = make(map[string][]*websocket.Conn)
-	}
-
-	current := len(s.connections[tenantID][userID])
+	current := len(s.connections[userID])
 	if current >= s.maxConnectionsPerUser {
-		slog.Warn("Connection limit reached for user",
-			"tenant_id", tenantID,
-			"user_id", userID,
-			"limit", s.maxConnectionsPerUser)
+		slog.Warn("Connection limit reached for user", "user_id", userID, "limit", s.maxConnectionsPerUser)
 		return fmt.Errorf("connection limit of %d reached", s.maxConnectionsPerUser)
 	}
 
-	s.connections[tenantID][userID] = append(s.connections[tenantID][userID], conn)
+	s.connections[userID] = append(s.connections[userID], conn)
 	s.activeConnections.Add(1)
+	s.presence[userID] = time.Now()
 
-	if s.presence[tenantID] == nil {
-		s.presence[tenantID] = make(map[string]time.Time)
-	}
-	s.presence[tenantID][userID] = time.Now()
-
-	slog.Info("WebSocket connection registered",
-		"tenant_id", tenantID,
-		"user_id", userID,
-		"total_connections", current+1)
+	slog.Info("WebSocket connection registered", "user_id", userID, "total_connections", current+1)
 	return nil
 }
 
 // UnregisterConnection removes a WebSocket connection for a user
-func (s *Service) UnregisterConnection(tenantID, userID string, conn *websocket.Conn) {
+func (s *Service) UnregisterConnection(userID string, conn *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	connections, exists := s.connections[tenantID][userID]
+	connections, exists := s.connections[userID]
 	if !exists {
 		return
 	}
 
-	// Remove the specific connection
 	for i, c := range connections {
 		if c == conn {
-			s.connections[tenantID][userID] = append(connections[:i], connections[i+1:]...)
+			s.connections[userID] = append(connections[:i], connections[i+1:]...)
 			s.activeConnections.Add(-1)
 			break
 		}
 	}
 
-	// If no more connections for this user, update presence with grace period
-	if len(s.connections[tenantID][userID]) == 0 {
-		delete(s.connections[tenantID], userID)
-		// Keep presence for 5 seconds to handle quick reconnects
+	if len(s.connections[userID]) == 0 {
+		delete(s.connections, userID)
 		time.AfterFunc(5*time.Second, func() {
 			s.mu.Lock()
-			if presenceTime, exists := s.presence[tenantID][userID]; exists {
+			if presenceTime, exists := s.presence[userID]; exists {
 				if time.Since(presenceTime) >= 5*time.Second {
-					delete(s.presence[tenantID], userID)
-					s.broadcastPresenceUpdate(tenantID, userID, "offline")
+					delete(s.presence, userID)
+					s.broadcastPresenceUpdate(userID, "offline")
 				}
 			}
 			s.mu.Unlock()
 		})
 	}
 
-	slog.Info("WebSocket connection unregistered",
-		"tenant_id", tenantID,
-		"user_id", userID,
-		"remaining_connections", len(s.connections[tenantID][userID]))
+	slog.Info("WebSocket connection unregistered", "user_id", userID, "remaining_connections", len(s.connections[userID]))
 }
 
 // BroadcastToRoom broadcasts a message to all users in a room.
-// If the broker channel is full the message is dropped — chat messages are
-// already persisted and will be delivered by the delivery worker, but ephemeral
-// events (typing, presence) will be lost.
-func (s *Service) BroadcastToRoom(tenantID, roomID string, message interface{}) {
+func (s *Service) BroadcastToRoom(roomID string, message interface{}) {
 	payload, err := json.Marshal(message)
 	if err != nil {
-		slog.Error("BroadcastToRoom: failed to marshal message",
-			"tenant_id", tenantID,
-			"room_id", roomID,
-			"error", err)
+		slog.Error("BroadcastToRoom: failed to marshal message", "room_id", roomID, "error", err)
 		return
 	}
-	s.broker.Broadcast(tenantID, roomID, payload)
+	s.broker.Broadcast(roomID, payload)
 }
 
 // deliverToRoom is called by the broker for each message.
-// It looks up room members and delivers to local WS connections.
-func (s *Service) deliverToRoom(tenantID, roomID string, payload []byte) {
-	roomMembers, err := s.roomRepo.GetMemberIDs(tenantID, roomID)
+func (s *Service) deliverToRoom(roomID string, payload []byte) {
+	roomMembers, err := s.roomRepo.GetMemberIDs(roomID)
 	if err != nil {
-		slog.Error("deliverToRoom: failed to get room members",
-			"tenant_id", tenantID,
-			"room_id", roomID,
-			"error", err)
+		slog.Error("deliverToRoom: failed to get room members", "room_id", roomID, "error", err)
 		return
 	}
 
 	s.mu.RLock()
-	tenantConnections := s.connections[tenantID]
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
 
-	// Only deliver to room members who are connected
 	for _, memberID := range roomMembers {
-		if connections, exists := tenantConnections[memberID]; exists {
+		if connections, exists := s.connections[memberID]; exists {
 			for _, conn := range connections {
 				if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-					slog.Warn("Failed to broadcast message to user",
-						"tenant_id", tenantID,
-						"user_id", memberID,
-						"room_id", roomID,
-						"error", err)
+					slog.Warn("Failed to broadcast message to user", "user_id", memberID, "room_id", roomID, "error", err)
 				}
 			}
 		}
@@ -173,98 +131,73 @@ func (s *Service) deliverToRoom(tenantID, roomID string, payload []byte) {
 }
 
 // SendToUser sends a message directly to a specific user
-func (s *Service) SendToUser(tenantID, userID string, message interface{}) {
+func (s *Service) SendToUser(userID string, message interface{}) {
 	s.mu.RLock()
-	connections, exists := s.connections[tenantID][userID]
+	connections, exists := s.connections[userID]
 	s.mu.RUnlock()
 
 	if !exists || len(connections) == 0 {
-		slog.Debug("No connections found for user, message not delivered",
-			"tenant_id", tenantID,
-			"user_id", userID)
 		return
 	}
 
 	messageBytes, err := json.Marshal(message)
 	if err != nil {
-		slog.Error("Failed to marshal message for user",
-			"tenant_id", tenantID,
-			"user_id", userID,
-			"error", err)
+		slog.Error("Failed to marshal message for user", "user_id", userID, "error", err)
 		return
 	}
 
 	for _, conn := range connections {
 		if err := conn.WriteMessage(websocket.TextMessage, messageBytes); err != nil {
-			slog.Warn("Failed to send message to user connection",
-				"tenant_id", tenantID,
-				"user_id", userID,
-				"error", err)
-			// Connection might be dead, but we'll let the connection handler deal with it
+			slog.Warn("Failed to send message to user connection", "user_id", userID, "error", err)
 		}
 	}
 }
 
 // IsUserOnline checks if a user has active connections
-func (s *Service) IsUserOnline(tenantID, userID string) bool {
+func (s *Service) IsUserOnline(userID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	connections, exists := s.connections[tenantID][userID]
+	connections, exists := s.connections[userID]
 	return exists && len(connections) > 0
 }
 
-// GetOnlineUsers returns all currently online users for a tenant
-func (s *Service) GetOnlineUsers(tenantID string) []string {
+// GetOnlineUsers returns all currently online users
+func (s *Service) GetOnlineUsers() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var onlineUsers []string
-	if tenantPresence, exists := s.presence[tenantID]; exists {
-		for userID := range tenantPresence {
-			if s.isUserOnlineLocked(tenantID, userID) {
-				onlineUsers = append(onlineUsers, userID)
-			}
+	var online []string
+	for userID := range s.presence {
+		if conns, exists := s.connections[userID]; exists && len(conns) > 0 {
+			online = append(online, userID)
 		}
 	}
-
-	return onlineUsers
+	return online
 }
 
-// isUserOnlineLocked checks online status without acquiring mu (caller must hold at least RLock).
-func (s *Service) isUserOnlineLocked(tenantID, userID string) bool {
-	connections, exists := s.connections[tenantID][userID]
-	return exists && len(connections) > 0
+// BroadcastPresenceUpdate broadcasts a presence change
+func (s *Service) BroadcastPresenceUpdate(userID, status string) {
+	s.broadcastPresenceUpdate(userID, status)
 }
 
-// BroadcastPresenceUpdate broadcasts presence changes
-func (s *Service) BroadcastPresenceUpdate(tenantID, userID, status string) {
-	s.broadcastPresenceUpdate(tenantID, userID, status)
-}
-
-// broadcastPresenceUpdate sends presence updates to relevant users
-func (s *Service) broadcastPresenceUpdate(tenantID, userID, status string) {
-	presenceMsg := map[string]interface{}{
+func (s *Service) broadcastPresenceUpdate(userID, status string) {
+	msg := map[string]interface{}{
 		"type":      "presence.update",
 		"user_id":   userID,
 		"status":    status,
 		"timestamp": time.Now().Unix(),
 	}
 
-	// For now, broadcast to all connected users in the tenant
-	// In a more sophisticated implementation, you might track which users
-	// are subscribed to which presence updates
 	s.mu.RLock()
-	tenantConnections := s.connections[tenantID]
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
 
-	messageBytes, err := json.Marshal(presenceMsg)
+	messageBytes, err := json.Marshal(msg)
 	if err != nil {
 		slog.Error("Failed to marshal presence message", "error", err)
 		return
 	}
 
-	for _, connections := range tenantConnections {
+	for _, connections := range s.connections {
 		for _, conn := range connections {
 			if err := conn.WriteMessage(websocket.TextMessage, messageBytes); err != nil {
 				slog.Warn("Failed to send presence update", "error", err)
@@ -273,7 +206,6 @@ func (s *Service) broadcastPresenceUpdate(tenantID, userID, status string) {
 	}
 }
 
-// presenceCleanupWorker periodically cleans up stale presence data
 func (s *Service) presenceCleanupWorker() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -288,25 +220,16 @@ func (s *Service) presenceCleanupWorker() {
 	}
 }
 
-// cleanupStalePresence removes presence entries for users who haven't been seen recently
 func (s *Service) cleanupStalePresence() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	staleThreshold := 5 * time.Minute // Consider users offline after 5 minutes of no activity
+	staleThreshold := 5 * time.Minute
 
-	for tenantID, tenantPresence := range s.presence {
-		for userID, lastSeen := range tenantPresence {
-			// Check connections directly — do not call IsUserOnline, which would
-			// attempt to re-acquire s.mu and deadlock.
-			conns := s.connections[tenantID][userID]
-			if now.Sub(lastSeen) > staleThreshold && len(conns) == 0 {
-				delete(s.presence[tenantID], userID)
-				slog.Debug("Cleaned up stale presence",
-					"tenant_id", tenantID,
-					"user_id", userID)
-			}
+	for userID, lastSeen := range s.presence {
+		if now.Sub(lastSeen) > staleThreshold && len(s.connections[userID]) == 0 {
+			delete(s.presence, userID)
 		}
 	}
 }
@@ -321,7 +244,6 @@ func (s *Service) DroppedBroadcasts() int64 {
 	return s.broker.DroppedCount()
 }
 
-
 // Shutdown gracefully shuts down the realtime service
 func (s *Service) Shutdown(ctx context.Context) error {
 	s.shutdownOnce.Do(func() {
@@ -329,33 +251,24 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		close(s.shutdownCh)
 	})
 
-	// Close all connections
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	shutdownMsg := map[string]interface{}{
+	shutdownMsg, _ := json.Marshal(map[string]interface{}{
 		"type":               "server.shutdown",
 		"reconnect_after_ms": 5000,
-	}
+	})
 
-	messageBytes, _ := json.Marshal(shutdownMsg)
-
-	for tenantID, tenantConnections := range s.connections {
-		for userID, connections := range tenantConnections {
-			for _, conn := range connections {
-				conn.WriteMessage(websocket.TextMessage, messageBytes)
-				conn.Close()
-			}
-			slog.Info("Closed connections for user",
-				"tenant_id", tenantID,
-				"user_id", userID,
-				"connections_closed", len(connections))
+	for userID, connections := range s.connections {
+		for _, conn := range connections {
+			conn.WriteMessage(websocket.TextMessage, shutdownMsg)
+			conn.Close()
 		}
+		slog.Info("Closed connections for user", "user_id", userID, "connections_closed", len(connections))
 	}
 
-	// Clear connection maps
-	s.connections = make(map[string]map[string][]*websocket.Conn)
-	s.presence = make(map[string]map[string]time.Time)
+	s.connections = make(map[string][]*websocket.Conn)
+	s.presence = make(map[string]time.Time)
 
 	return nil
 }

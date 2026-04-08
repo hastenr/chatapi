@@ -5,7 +5,6 @@ import "time"
 // Room represents a chat room
 type Room struct {
 	RoomID    string    `json:"room_id" db:"room_id"`
-	TenantID  string    `json:"tenant_id" db:"tenant_id"`
 	Type      string    `json:"type" db:"type"` // "dm", "group", "channel"
 	UniqueKey string    `json:"-" db:"unique_key"` // For DMs
 	Name      string    `json:"name,omitempty" db:"name"`
@@ -17,7 +16,6 @@ type Room struct {
 // RoomMember represents a user's membership in a room
 type RoomMember struct {
 	ChatroomID string    `json:"chatroom_id" db:"chatroom_id"`
-	TenantID   string    `json:"tenant_id" db:"tenant_id"`
 	UserID     string    `json:"user_id" db:"user_id"`
 	Role       string    `json:"role" db:"role"`
 	JoinedAt   time.Time `json:"joined_at" db:"joined_at"`
@@ -26,7 +24,6 @@ type RoomMember struct {
 // Message represents a chat message
 type Message struct {
 	MessageID  string    `json:"message_id" db:"message_id"`
-	TenantID   string    `json:"tenant_id" db:"tenant_id"`
 	ChatroomID string    `json:"chatroom_id" db:"chatroom_id"`
 	SenderID   string    `json:"sender_id" db:"sender_id"`
 	Seq        int       `json:"seq" db:"seq"`
@@ -37,7 +34,6 @@ type Message struct {
 
 // DeliveryState tracks per-user per-room delivery state
 type DeliveryState struct {
-	TenantID   string    `json:"tenant_id" db:"tenant_id"`
 	UserID     string    `json:"user_id" db:"user_id"`
 	ChatroomID string    `json:"chatroom_id" db:"chatroom_id"`
 	LastAck    int       `json:"last_ack" db:"last_ack"`
@@ -46,21 +42,19 @@ type DeliveryState struct {
 
 // UndeliveredMessage represents a message that hasn't been delivered yet
 type UndeliveredMessage struct {
-	ID           int       `json:"id" db:"id"`
-	TenantID     string    `json:"tenant_id" db:"tenant_id"`
-	UserID       string    `json:"user_id" db:"user_id"`
-	ChatroomID   string    `json:"chatroom_id" db:"chatroom_id"`
-	MessageID    string    `json:"message_id" db:"message_id"`
-	Seq          int       `json:"seq" db:"seq"`
-	Attempts     int       `json:"attempts" db:"attempts"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ID            int        `json:"id" db:"id"`
+	UserID        string     `json:"user_id" db:"user_id"`
+	ChatroomID    string     `json:"chatroom_id" db:"chatroom_id"`
+	MessageID     string     `json:"message_id" db:"message_id"`
+	Seq           int        `json:"seq" db:"seq"`
+	Attempts      int        `json:"attempts" db:"attempts"`
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
 	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty" db:"last_attempt_at"`
 }
 
 // Notification represents a durable notification
 type Notification struct {
 	NotificationID string     `json:"notification_id" db:"notification_id"`
-	TenantID       string     `json:"tenant_id" db:"tenant_id"`
 	Topic          string     `json:"topic" db:"topic"`
 	Payload        string     `json:"payload" db:"payload"` // JSON payload
 	Targets        string     `json:"targets,omitempty" db:"targets"` // JSON-encoded NotificationTargets
@@ -73,11 +67,8 @@ type Notification struct {
 // NotificationSubscription represents a subscription to notification topics
 type NotificationSubscription struct {
 	ID           int       `json:"id" db:"id"`
-	TenantID     string    `json:"tenant_id" db:"tenant_id"`
 	SubscriberID string    `json:"subscriber_id" db:"subscriber_id"`
 	Topic        string    `json:"topic" db:"topic"`
-	Endpoint     string    `json:"endpoint,omitempty" db:"endpoint"` // webhook URL or push token
-	Metadata     string    `json:"metadata,omitempty" db:"metadata"` // JSON metadata
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -111,8 +102,6 @@ type CreateBotRequest struct {
 type AddMemberRequest struct {
 	UserID string `json:"user_id"`
 }
-
-// API request/response types
 
 // UpdateRoomRequest represents a request to update a room's name or metadata.
 // Pointer fields: nil means "do not change this field".
@@ -148,19 +137,17 @@ type AckRequest struct {
 
 // CreateNotificationRequest represents a request to create a notification
 type CreateNotificationRequest struct {
-	Topic    string                 `json:"topic"`
-	Payload  map[string]interface{} `json:"payload"`
-	Targets  NotificationTargets    `json:"targets"`
+	Topic   string                 `json:"topic"`
+	Payload map[string]interface{} `json:"payload"`
+	Targets NotificationTargets    `json:"targets"`
 }
 
 // NotificationTargets specifies who should receive a notification
 type NotificationTargets struct {
-	UserIDs           []string `json:"user_ids,omitempty"`
-	RoomID            string   `json:"room_id,omitempty"`
-	TopicSubscribers  bool     `json:"topic_subscribers,omitempty"`
+	UserIDs          []string `json:"user_ids,omitempty"`
+	RoomID           string   `json:"room_id,omitempty"`
+	TopicSubscribers bool     `json:"topic_subscribers,omitempty"`
 }
-
-// WebSocket message types
 
 // WSMessage represents a WebSocket message
 type WSMessage struct {

@@ -15,8 +15,6 @@ import (
 	"github.com/hastenr/chatapi/internal/testutil"
 )
 
-const testTenantID = "default"
-
 type deliveryScenario struct {
 	roomID      string
 	deliverySvc *delivery.Service
@@ -31,7 +29,7 @@ func newDeliveryScenario(t *testing.T) *deliveryScenario {
 
 	roomRepo := sqlite.NewRoomRepository(db.DB)
 	chatroomSvc := chatroom.NewService(roomRepo)
-	room, err := chatroomSvc.CreateRoom(testTenantID, &models.CreateRoomRequest{
+	room, err := chatroomSvc.CreateRoom(&models.CreateRoomRequest{
 		Type:    "group",
 		Name:    "general",
 		Members: []string{"user1", "user2", "user3"},
@@ -62,16 +60,16 @@ func newDeliveryScenario(t *testing.T) *deliveryScenario {
 func TestHandleNewMessage_QueuesForOfflineUsers(t *testing.T) {
 	s := newDeliveryScenario(t)
 
-	msg, err := s.messageSvc.SendMessage(testTenantID, s.roomID, "user1", &models.CreateMessageRequest{
+	msg, err := s.messageSvc.SendMessage(s.roomID, "user1", &models.CreateMessageRequest{
 		Content: "hello",
 	})
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
-	s.deliverySvc.HandleNewMessage(testTenantID, s.roomID, msg)
+	s.deliverySvc.HandleNewMessage(s.roomID, msg)
 
-	undelivered, err := s.messageSvc.GetUndeliveredMessages(testTenantID, "user2", 50)
+	undelivered, err := s.messageSvc.GetUndeliveredMessages("user2", 50)
 	if err != nil {
 		t.Fatalf("GetUndeliveredMessages(user2): %v", err)
 	}
@@ -79,7 +77,7 @@ func TestHandleNewMessage_QueuesForOfflineUsers(t *testing.T) {
 		t.Errorf("user2 undelivered count = %d, want 1", len(undelivered))
 	}
 
-	undelivered, err = s.messageSvc.GetUndeliveredMessages(testTenantID, "user3", 50)
+	undelivered, err = s.messageSvc.GetUndeliveredMessages("user3", 50)
 	if err != nil {
 		t.Fatalf("GetUndeliveredMessages(user3): %v", err)
 	}
@@ -91,16 +89,16 @@ func TestHandleNewMessage_QueuesForOfflineUsers(t *testing.T) {
 func TestHandleNewMessage_SenderNotQueued(t *testing.T) {
 	s := newDeliveryScenario(t)
 
-	msg, err := s.messageSvc.SendMessage(testTenantID, s.roomID, "user1", &models.CreateMessageRequest{
+	msg, err := s.messageSvc.SendMessage(s.roomID, "user1", &models.CreateMessageRequest{
 		Content: "hello",
 	})
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
-	s.deliverySvc.HandleNewMessage(testTenantID, s.roomID, msg)
+	s.deliverySvc.HandleNewMessage(s.roomID, msg)
 
-	undelivered, err := s.messageSvc.GetUndeliveredMessages(testTenantID, "user1", 50)
+	undelivered, err := s.messageSvc.GetUndeliveredMessages("user1", 50)
 	if err != nil {
 		t.Fatalf("GetUndeliveredMessages(user1): %v", err)
 	}
@@ -114,14 +112,14 @@ func TestHandleNewMessage_SenderNotQueued(t *testing.T) {
 func TestProcessUndeliveredMessages_IncreasesAttempts(t *testing.T) {
 	s := newDeliveryScenario(t)
 
-	msg, _ := s.messageSvc.SendMessage(testTenantID, s.roomID, "user1", &models.CreateMessageRequest{Content: "hi"})
-	s.deliverySvc.HandleNewMessage(testTenantID, s.roomID, msg)
+	msg, _ := s.messageSvc.SendMessage(s.roomID, "user1", &models.CreateMessageRequest{Content: "hi"})
+	s.deliverySvc.HandleNewMessage(s.roomID, msg)
 
-	if err := s.deliverySvc.ProcessUndeliveredMessages(testTenantID, 50); err != nil {
+	if err := s.deliverySvc.ProcessUndeliveredMessages(50); err != nil {
 		t.Fatalf("ProcessUndeliveredMessages: %v", err)
 	}
 
-	undelivered, _ := s.messageSvc.GetUndeliveredMessages(testTenantID, "user2", 50)
+	undelivered, _ := s.messageSvc.GetUndeliveredMessages("user2", 50)
 	if len(undelivered) == 0 {
 		t.Fatal("expected undelivered entry after processing")
 	}
@@ -133,11 +131,11 @@ func TestProcessUndeliveredMessages_IncreasesAttempts(t *testing.T) {
 func TestProcessUndeliveredMessages_DeliveredCounters(t *testing.T) {
 	s := newDeliveryScenario(t)
 
-	msg, _ := s.messageSvc.SendMessage(testTenantID, s.roomID, "user1", &models.CreateMessageRequest{Content: "hi"})
-	s.deliverySvc.HandleNewMessage(testTenantID, s.roomID, msg)
+	msg, _ := s.messageSvc.SendMessage(s.roomID, "user1", &models.CreateMessageRequest{Content: "hi"})
+	s.deliverySvc.HandleNewMessage(s.roomID, msg)
 
 	before := s.deliverySvc.DeliveryAttempts()
-	s.deliverySvc.ProcessUndeliveredMessages(testTenantID, 50)
+	s.deliverySvc.ProcessUndeliveredMessages(50)
 	after := s.deliverySvc.DeliveryAttempts()
 
 	if after-before != 2 {
@@ -150,7 +148,7 @@ func TestProcessUndeliveredMessages_DeliveredCounters(t *testing.T) {
 func TestDeliverNow_DoesNotPanic(t *testing.T) {
 	s := newDeliveryScenario(t)
 
-	notif, err := s.notifSvc.CreateNotification(testTenantID, &models.CreateNotificationRequest{
+	notif, err := s.notifSvc.CreateNotification(&models.CreateNotificationRequest{
 		Topic:   "test.topic",
 		Payload: map[string]interface{}{"key": "value"},
 		Targets: models.NotificationTargets{UserIDs: []string{"user1"}},
@@ -178,9 +176,9 @@ func TestDeliveryCounters_InitiallyZero(t *testing.T) {
 func TestDeliveryFailures_IncrementsWhenOffline(t *testing.T) {
 	s := newDeliveryScenario(t)
 
-	msg, _ := s.messageSvc.SendMessage(testTenantID, s.roomID, "user1", &models.CreateMessageRequest{Content: "hi"})
-	s.deliverySvc.HandleNewMessage(testTenantID, s.roomID, msg)
-	s.deliverySvc.ProcessUndeliveredMessages(testTenantID, 50)
+	msg, _ := s.messageSvc.SendMessage(s.roomID, "user1", &models.CreateMessageRequest{Content: "hi"})
+	s.deliverySvc.HandleNewMessage(s.roomID, msg)
+	s.deliverySvc.ProcessUndeliveredMessages(50)
 
 	if got := s.deliverySvc.DeliveryFailures(); got == 0 {
 		t.Error("DeliveryFailures = 0 after processing offline users, want > 0")

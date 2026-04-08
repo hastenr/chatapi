@@ -20,9 +20,6 @@ import (
 	"github.com/hastenr/chatapi/internal/services/realtime"
 )
 
-// defaultTenantID is used throughout as ChatAPI is single-tenant per deployment.
-const defaultTenantID = "default"
-
 // Handler handles REST API requests
 type Handler struct {
 	chatroomSvc *chatroom.Service
@@ -117,9 +114,9 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":     "ok",
+		"status":      "ok",
 		"db_writable": dbWritable,
-		"uptime":     uptime.String(),
+		"uptime":      uptime.String(),
 	})
 }
 
@@ -150,7 +147,7 @@ func (h *Handler) HandleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := h.chatroomSvc.CreateRoom(defaultTenantID, &req)
+	room, err := h.chatroomSvc.CreateRoom(&req)
 	if err != nil {
 		slog.Error("Failed to create room", "error", err, "user_id", userID)
 		writeError(w, "internal_error", "Failed to create room", http.StatusInternalServerError)
@@ -165,7 +162,7 @@ func (h *Handler) HandleCreateRoom(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleGetRoom(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("room_id")
 
-	room, err := h.chatroomSvc.GetRoom(defaultTenantID, roomID)
+	room, err := h.chatroomSvc.GetRoom(roomID)
 	if err != nil {
 		writeError(w, "not_found", "Room not found", http.StatusNotFound)
 		return
@@ -179,7 +176,7 @@ func (h *Handler) HandleGetRoom(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleGetRoomMembers(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("room_id")
 
-	members, err := h.chatroomSvc.GetRoomMembers(defaultTenantID, roomID)
+	members, err := h.chatroomSvc.GetRoomMembers(roomID)
 	if err != nil {
 		writeError(w, "internal_error", "Failed to get room members", http.StatusInternalServerError)
 		return
@@ -211,7 +208,7 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message, err := h.messageSvc.SendMessage(defaultTenantID, roomID, userID, &req)
+	message, err := h.messageSvc.SendMessage(roomID, userID, &req)
 	if err != nil {
 		slog.Error("Failed to send message", "error", err, "user_id", userID, "room_id", roomID)
 		writeError(w, "internal_error", "Failed to send message", http.StatusInternalServerError)
@@ -230,10 +227,10 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if message.Meta != "" {
 		broadcast["meta"] = message.Meta
 	}
-	h.realtimeSvc.BroadcastToRoom(defaultTenantID, roomID, broadcast)
+	h.realtimeSvc.BroadcastToRoom(roomID, broadcast)
 
-	go h.deliverySvc.HandleNewMessage(defaultTenantID, roomID, message)
-	go h.botSvc.TriggerBots(defaultTenantID, roomID, message)
+	go h.deliverySvc.HandleNewMessage(roomID, message)
+	go h.botSvc.TriggerBots(roomID, message)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(message)
@@ -257,7 +254,7 @@ func (h *Handler) HandleGetMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages, err := h.messageSvc.GetMessages(defaultTenantID, roomID, afterSeq, limit)
+	messages, err := h.messageSvc.GetMessages(roomID, afterSeq, limit)
 	if err != nil {
 		writeError(w, "internal_error", "Failed to get messages", http.StatusInternalServerError)
 		return
@@ -282,12 +279,12 @@ func (h *Handler) HandleAck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.messageSvc.UpdateLastAck(defaultTenantID, userID, req.RoomID, req.Seq); err != nil {
+	if err := h.messageSvc.UpdateLastAck(userID, req.RoomID, req.Seq); err != nil {
 		writeError(w, "internal_error", "Failed to process acknowledgment", http.StatusInternalServerError)
 		return
 	}
 
-	h.realtimeSvc.BroadcastToRoom(defaultTenantID, req.RoomID, map[string]interface{}{
+	h.realtimeSvc.BroadcastToRoom(req.RoomID, map[string]interface{}{
 		"type":    "ack.received",
 		"room_id": req.RoomID,
 		"seq":     req.Seq,
@@ -305,7 +302,7 @@ func (h *Handler) HandleNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notif, err := h.notifSvc.CreateNotification(defaultTenantID, &req)
+	notif, err := h.notifSvc.CreateNotification(&req)
 	if err != nil {
 		slog.Error("Failed to create notification", "error", err)
 		writeError(w, "internal_error", "Failed to create notification", http.StatusInternalServerError)
@@ -328,13 +325,13 @@ func (h *Handler) HandleGetDeadLetters(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	failedNotifications, err := h.notifSvc.GetFailedNotifications(defaultTenantID, limit)
+	failedNotifications, err := h.notifSvc.GetFailedNotifications(limit)
 	if err != nil {
 		writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	failedMessages, err := h.messageSvc.GetFailedUndeliveredMessages(defaultTenantID, limit)
+	failedMessages, err := h.messageSvc.GetFailedUndeliveredMessages(limit)
 	if err != nil {
 		writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
 		return
@@ -354,7 +351,7 @@ func (h *Handler) HandleGetUserRooms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rooms, err := h.chatroomSvc.GetUserRooms(defaultTenantID, userID)
+	rooms, err := h.chatroomSvc.GetUserRooms(userID)
 	if err != nil {
 		slog.Error("Failed to get user rooms", "error", err, "user_id", userID)
 		writeError(w, "internal_error", "Failed to get rooms", http.StatusInternalServerError)
@@ -388,7 +385,7 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub, err := h.notifSvc.Subscribe(defaultTenantID, userID, req.Topic)
+	sub, err := h.notifSvc.Subscribe(userID, req.Topic)
 	if err != nil {
 		slog.Error("Failed to subscribe", "error", err, "user_id", userID)
 		writeError(w, "internal_error", "Failed to subscribe", http.StatusInternalServerError)
@@ -414,7 +411,7 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.notifSvc.Unsubscribe(defaultTenantID, userID, id); err != nil {
+	if err := h.notifSvc.Unsubscribe(userID, id); err != nil {
 		writeError(w, "not_found", "Subscription not found", http.StatusNotFound)
 		return
 	}
@@ -429,7 +426,7 @@ func (h *Handler) HandleListSubscriptions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	subs, err := h.notifSvc.GetUserSubscriptions(defaultTenantID, userID)
+	subs, err := h.notifSvc.GetUserSubscriptions(userID)
 	if err != nil {
 		writeError(w, "internal_error", "Failed to get subscriptions", http.StatusInternalServerError)
 		return
@@ -453,7 +450,7 @@ func (h *Handler) HandleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	roomID := r.PathValue("room_id")
 	messageID := r.PathValue("message_id")
 
-	seq, err := h.messageSvc.DeleteMessage(defaultTenantID, roomID, messageID, userID)
+	seq, err := h.messageSvc.DeleteMessage(roomID, messageID, userID)
 	if err != nil {
 		switch err.Error() {
 		case "message not found":
@@ -467,7 +464,7 @@ func (h *Handler) HandleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.realtimeSvc.BroadcastToRoom(defaultTenantID, roomID, map[string]interface{}{
+	h.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 		"type":       "message.deleted",
 		"room_id":    roomID,
 		"message_id": messageID,
@@ -487,7 +484,7 @@ func (h *Handler) HandleUpdateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := h.chatroomSvc.UpdateRoom(defaultTenantID, roomID, &req)
+	room, err := h.chatroomSvc.UpdateRoom(roomID, &req)
 	if err != nil {
 		if err.Error() == "room not found" {
 			writeError(w, "not_found", "Room not found", http.StatusNotFound)
@@ -516,7 +513,7 @@ func (h *Handler) HandleAddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.chatroomSvc.AddMember(defaultTenantID, roomID, req.UserID); err != nil {
+	if err := h.chatroomSvc.AddMember(roomID, req.UserID); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
 			writeError(w, "conflict", "Member already in room", http.StatusConflict)
 			return
@@ -604,7 +601,7 @@ func (h *Handler) HandleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, err := h.messageSvc.UpdateMessage(defaultTenantID, roomID, messageID, userID, req.Content)
+	msg, err := h.messageSvc.UpdateMessage(roomID, messageID, userID, req.Content)
 	if err != nil {
 		switch err.Error() {
 		case "message not found":
@@ -618,7 +615,7 @@ func (h *Handler) HandleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.realtimeSvc.BroadcastToRoom(defaultTenantID, roomID, map[string]interface{}{
+	h.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 		"type":       "message.edited",
 		"room_id":    roomID,
 		"message_id": messageID,

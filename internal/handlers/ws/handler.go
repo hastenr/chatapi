@@ -18,9 +18,6 @@ import (
 	"github.com/hastenr/chatapi/internal/services/realtime"
 )
 
-// defaultTenantID mirrors the REST handler constant — single-tenant per deployment.
-const defaultTenantID = "default"
-
 // Handler handles WebSocket connections
 type Handler struct {
 	chatroomSvc *chatroom.Service
@@ -97,17 +94,17 @@ func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.realtimeSvc.RegisterConnection(defaultTenantID, userID, conn); err != nil {
+	if err := h.realtimeSvc.RegisterConnection(userID, conn); err != nil {
 		conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "connection limit reached"))
 		conn.Close()
 		return
 	}
 
-	h.realtimeSvc.BroadcastPresenceUpdate(defaultTenantID, userID, "online")
+	h.realtimeSvc.BroadcastPresenceUpdate(userID, "online")
 
-	go h.handleReconnectSync(defaultTenantID, userID, conn)
-	go h.handleConnection(defaultTenantID, userID, conn)
+	go h.handleReconnectSync(userID, conn)
+	go h.handleConnection(userID, conn)
 }
 
 // authenticate extracts and validates the JWT from the request.
@@ -137,12 +134,12 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (string, 
 
 // handleReconnectSync sends missed messages to a reconnecting client.
 // Currently a no-op — clients request missed messages via after_seq on reconnect.
-func (h *Handler) handleReconnectSync(tenantID, userID string, conn *websocket.Conn) {}
+func (h *Handler) handleReconnectSync(userID string, conn *websocket.Conn) {}
 
 // handleConnection processes messages from a WebSocket connection
-func (h *Handler) handleConnection(tenantID, userID string, conn *websocket.Conn) {
+func (h *Handler) handleConnection(userID string, conn *websocket.Conn) {
 	defer func() {
-		h.realtimeSvc.UnregisterConnection(tenantID, userID, conn)
+		h.realtimeSvc.UnregisterConnection(userID, conn)
 		conn.Close()
 	}()
 
@@ -156,7 +153,7 @@ func (h *Handler) handleConnection(tenantID, userID string, conn *websocket.Conn
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				slog.Warn("WebSocket error", "tenant_id", tenantID, "user_id", userID, "error", err)
+				slog.Warn("WebSocket error", "user_id", userID, "error", err)
 			}
 			break
 		}
@@ -165,13 +162,12 @@ func (h *Handler) handleConnection(tenantID, userID string, conn *websocket.Conn
 
 		var wsMsg models.WSMessage
 		if err := json.Unmarshal(message, &wsMsg); err != nil {
-			slog.Warn("Invalid WebSocket message", "tenant_id", tenantID, "user_id", userID, "error", err)
+			slog.Warn("Invalid WebSocket message", "user_id", userID, "error", err)
 			continue
 		}
 
-		if err := h.handleMessage(tenantID, userID, &wsMsg); err != nil {
+		if err := h.handleMessage(userID, &wsMsg); err != nil {
 			slog.Error("Failed to handle WebSocket message",
-				"tenant_id", tenantID,
 				"user_id", userID,
 				"type", wsMsg.Type,
 				"error", err)
@@ -180,26 +176,26 @@ func (h *Handler) handleConnection(tenantID, userID string, conn *websocket.Conn
 }
 
 // handleMessage processes different types of WebSocket messages
-func (h *Handler) handleMessage(tenantID, userID string, msg *models.WSMessage) error {
+func (h *Handler) handleMessage(userID string, msg *models.WSMessage) error {
 	switch msg.Type {
 	case "send_message":
-		return h.handleSendMessage(tenantID, userID, msg.Data)
+		return h.handleSendMessage(userID, msg.Data)
 	case "ack":
-		return h.handleAck(tenantID, userID, msg.Data)
+		return h.handleAck(userID, msg.Data)
 	case "typing.start":
-		return h.handleTyping(tenantID, userID, msg.Data, "start")
+		return h.handleTyping(userID, msg.Data, "start")
 	case "typing.stop":
-		return h.handleTyping(tenantID, userID, msg.Data, "stop")
+		return h.handleTyping(userID, msg.Data, "stop")
 	case "ping":
 		return nil
 	default:
-		slog.Warn("Unknown message type", "type", msg.Type, "tenant_id", tenantID, "user_id", userID)
+		slog.Warn("Unknown message type", "type", msg.Type, "user_id", userID)
 		return nil
 	}
 }
 
 // handleSendMessage handles message sending via WebSocket
-func (h *Handler) handleSendMessage(tenantID, userID string, data interface{}) error {
+func (h *Handler) handleSendMessage(userID string, data interface{}) error {
 	msgData, ok := data.(map[string]interface{})
 	if !ok {
 		return nil
@@ -220,7 +216,7 @@ func (h *Handler) handleSendMessage(tenantID, userID string, data interface{}) e
 		req.Meta = meta
 	}
 
-	message, err := h.messageSvc.SendMessage(tenantID, roomID, userID, req)
+	message, err := h.messageSvc.SendMessage(roomID, userID, req)
 	if err != nil {
 		return err
 	}
@@ -237,16 +233,16 @@ func (h *Handler) handleSendMessage(tenantID, userID string, data interface{}) e
 	if message.Meta != "" {
 		broadcast["meta"] = message.Meta
 	}
-	h.realtimeSvc.BroadcastToRoom(tenantID, roomID, broadcast)
+	h.realtimeSvc.BroadcastToRoom(roomID, broadcast)
 
-	go h.deliverySvc.HandleNewMessage(tenantID, roomID, message)
-	go h.botSvc.TriggerBots(tenantID, roomID, message)
+	go h.deliverySvc.HandleNewMessage(roomID, message)
+	go h.botSvc.TriggerBots(roomID, message)
 
 	return nil
 }
 
 // handleAck handles acknowledgment of message delivery
-func (h *Handler) handleAck(tenantID, userID string, data interface{}) error {
+func (h *Handler) handleAck(userID string, data interface{}) error {
 	ackData, ok := data.(map[string]interface{})
 	if !ok {
 		return nil
@@ -262,11 +258,11 @@ func (h *Handler) handleAck(tenantID, userID string, data interface{}) error {
 		return nil
 	}
 
-	if err := h.messageSvc.UpdateLastAck(tenantID, userID, roomID, int(seqFloat)); err != nil {
+	if err := h.messageSvc.UpdateLastAck(userID, roomID, int(seqFloat)); err != nil {
 		return err
 	}
 
-	h.realtimeSvc.BroadcastToRoom(tenantID, roomID, map[string]interface{}{
+	h.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 		"type":    "ack.received",
 		"room_id": roomID,
 		"seq":     int(seqFloat),
@@ -277,7 +273,7 @@ func (h *Handler) handleAck(tenantID, userID string, data interface{}) error {
 }
 
 // handleTyping handles typing indicators
-func (h *Handler) handleTyping(tenantID, userID string, data interface{}, action string) error {
+func (h *Handler) handleTyping(userID string, data interface{}, action string) error {
 	typingData, ok := data.(map[string]interface{})
 	if !ok {
 		return nil
@@ -288,7 +284,7 @@ func (h *Handler) handleTyping(tenantID, userID string, data interface{}, action
 		return nil
 	}
 
-	h.realtimeSvc.BroadcastToRoom(tenantID, roomID, map[string]interface{}{
+	h.realtimeSvc.BroadcastToRoom(roomID, map[string]interface{}{
 		"type":    "typing",
 		"room_id": roomID,
 		"user_id": userID,

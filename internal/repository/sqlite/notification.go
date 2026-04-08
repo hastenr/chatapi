@@ -21,22 +21,21 @@ func NewNotificationRepository(db *sql.DB) *SQLiteNotificationRepository {
 }
 
 // Create creates a new durable notification.
-func (r *SQLiteNotificationRepository) Create(tenantID string, req *models.CreateNotificationRequest) (*models.Notification, error) {
+func (r *SQLiteNotificationRepository) Create(req *models.CreateNotificationRequest) (*models.Notification, error) {
 	notificationID := uuid.New().String()
 
 	payloadJSON, err := json.Marshal(req.Payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
-
 	targetsJSON, err := json.Marshal(req.Targets)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal targets: %w", err)
 	}
 
 	_, err = r.db.Exec(
-		`INSERT INTO notifications (notification_id, tenant_id, topic, payload, targets, status) VALUES (?, ?, ?, ?, ?, 'pending')`,
-		notificationID, tenantID, req.Topic, string(payloadJSON), string(targetsJSON),
+		`INSERT INTO notifications (notification_id, topic, payload, targets, status) VALUES (?, ?, ?, ?, 'pending')`,
+		notificationID, req.Topic, string(payloadJSON), string(targetsJSON),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create notification: %w", err)
@@ -44,7 +43,6 @@ func (r *SQLiteNotificationRepository) Create(tenantID string, req *models.Creat
 
 	return &models.Notification{
 		NotificationID: notificationID,
-		TenantID:       tenantID,
 		Topic:          req.Topic,
 		Payload:        string(payloadJSON),
 		Targets:        string(targetsJSON),
@@ -54,23 +52,12 @@ func (r *SQLiteNotificationRepository) Create(tenantID string, req *models.Creat
 }
 
 // GetByID retrieves a notification by ID.
-func (r *SQLiteNotificationRepository) GetByID(tenantID, notificationID string) (*models.Notification, error) {
+func (r *SQLiteNotificationRepository) GetByID(notificationID string) (*models.Notification, error) {
 	var n models.Notification
 	err := r.db.QueryRow(`
-		SELECT notification_id, tenant_id, topic, payload, created_at, status, attempts, last_attempt_at
-		FROM notifications
-		WHERE tenant_id = ? AND notification_id = ?`,
-		tenantID, notificationID,
-	).Scan(
-		&n.NotificationID,
-		&n.TenantID,
-		&n.Topic,
-		&n.Payload,
-		&n.CreatedAt,
-		&n.Status,
-		&n.Attempts,
-		&n.LastAttemptAt,
-	)
+		SELECT notification_id, topic, payload, created_at, status, attempts, last_attempt_at
+		FROM notifications WHERE notification_id = ?`, notificationID,
+	).Scan(&n.NotificationID, &n.Topic, &n.Payload, &n.CreatedAt, &n.Status, &n.Attempts, &n.LastAttemptAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("notification not found")
 	}
@@ -81,20 +68,14 @@ func (r *SQLiteNotificationRepository) GetByID(tenantID, notificationID string) 
 }
 
 // GetFailed retrieves notifications that have failed delivery (status = 'dead').
-func (r *SQLiteNotificationRepository) GetFailed(tenantID string, limit int) ([]*models.Notification, error) {
+func (r *SQLiteNotificationRepository) GetFailed(limit int) ([]*models.Notification, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-
-	query := `
-		SELECT notification_id, tenant_id, topic, payload, created_at, status, attempts, last_attempt_at
-		FROM notifications
-		WHERE tenant_id = ? AND status = 'dead'
-		ORDER BY created_at DESC
-		LIMIT ?
-	`
-
-	rows, err := r.db.Query(query, tenantID, limit)
+	rows, err := r.db.Query(`
+		SELECT notification_id, topic, payload, created_at, status, attempts, last_attempt_at
+		FROM notifications WHERE status = 'dead' ORDER BY created_at DESC LIMIT ?
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get failed notifications: %w", err)
 	}
@@ -103,30 +84,19 @@ func (r *SQLiteNotificationRepository) GetFailed(tenantID string, limit int) ([]
 	var notifications []*models.Notification
 	for rows.Next() {
 		var n models.Notification
-		err := rows.Scan(
-			&n.NotificationID,
-			&n.TenantID,
-			&n.Topic,
-			&n.Payload,
-			&n.CreatedAt,
-			&n.Status,
-			&n.Attempts,
-			&n.LastAttemptAt,
-		)
-		if err != nil {
+		if err := rows.Scan(&n.NotificationID, &n.Topic, &n.Payload, &n.CreatedAt, &n.Status, &n.Attempts, &n.LastAttemptAt); err != nil {
 			return nil, fmt.Errorf("failed to scan notification: %w", err)
 		}
 		notifications = append(notifications, &n)
 	}
-
 	return notifications, rows.Err()
 }
 
 // Subscribe subscribes a user to a notification topic.
-func (r *SQLiteNotificationRepository) Subscribe(tenantID, subscriberID, topic string) (*models.NotificationSubscription, error) {
+func (r *SQLiteNotificationRepository) Subscribe(subscriberID, topic string) (*models.NotificationSubscription, error) {
 	result, err := r.db.Exec(
-		`INSERT INTO notification_subscriptions (tenant_id, subscriber_id, topic) VALUES (?, ?, ?)`,
-		tenantID, subscriberID, topic,
+		`INSERT INTO notification_subscriptions (subscriber_id, topic) VALUES (?, ?)`,
+		subscriberID, topic,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe: %w", err)
@@ -134,7 +104,6 @@ func (r *SQLiteNotificationRepository) Subscribe(tenantID, subscriberID, topic s
 	id, _ := result.LastInsertId()
 	return &models.NotificationSubscription{
 		ID:           int(id),
-		TenantID:     tenantID,
 		SubscriberID: subscriberID,
 		Topic:        topic,
 		CreatedAt:    time.Now(),
@@ -142,10 +111,10 @@ func (r *SQLiteNotificationRepository) Subscribe(tenantID, subscriberID, topic s
 }
 
 // Unsubscribe removes a subscription owned by the given subscriber.
-func (r *SQLiteNotificationRepository) Unsubscribe(tenantID, subscriberID string, id int) error {
+func (r *SQLiteNotificationRepository) Unsubscribe(subscriberID string, id int) error {
 	result, err := r.db.Exec(
-		`DELETE FROM notification_subscriptions WHERE id = ? AND tenant_id = ? AND subscriber_id = ?`,
-		id, tenantID, subscriberID,
+		`DELETE FROM notification_subscriptions WHERE id = ? AND subscriber_id = ?`,
+		id, subscriberID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to unsubscribe: %w", err)
@@ -157,12 +126,11 @@ func (r *SQLiteNotificationRepository) Unsubscribe(tenantID, subscriberID string
 }
 
 // ListSubscriptions returns all subscriptions for a user.
-func (r *SQLiteNotificationRepository) ListSubscriptions(tenantID, subscriberID string) ([]*models.NotificationSubscription, error) {
-	rows, err := r.db.Query(
-		`SELECT id, tenant_id, subscriber_id, topic, endpoint, metadata, created_at
-		 FROM notification_subscriptions WHERE tenant_id = ? AND subscriber_id = ? ORDER BY created_at DESC`,
-		tenantID, subscriberID,
-	)
+func (r *SQLiteNotificationRepository) ListSubscriptions(subscriberID string) ([]*models.NotificationSubscription, error) {
+	rows, err := r.db.Query(`
+		SELECT id, subscriber_id, topic, created_at
+		FROM notification_subscriptions WHERE subscriber_id = ? ORDER BY created_at DESC
+	`, subscriberID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscriptions: %w", err)
 	}
@@ -171,12 +139,9 @@ func (r *SQLiteNotificationRepository) ListSubscriptions(tenantID, subscriberID 
 	var subs []*models.NotificationSubscription
 	for rows.Next() {
 		var sub models.NotificationSubscription
-		var endpoint, metadata sql.NullString
-		if err := rows.Scan(&sub.ID, &sub.TenantID, &sub.SubscriberID, &sub.Topic, &endpoint, &metadata, &sub.CreatedAt); err != nil {
+		if err := rows.Scan(&sub.ID, &sub.SubscriberID, &sub.Topic, &sub.CreatedAt); err != nil {
 			return nil, err
 		}
-		sub.Endpoint = endpoint.String
-		sub.Metadata = metadata.String
 		subs = append(subs, &sub)
 	}
 	return subs, rows.Err()

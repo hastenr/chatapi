@@ -48,44 +48,34 @@ func NewService(
 }
 
 // ProcessUndeliveredMessages processes messages that haven't been delivered yet
-func (s *Service) ProcessUndeliveredMessages(tenantID string, limit int) error {
+func (s *Service) ProcessUndeliveredMessages(limit int) error {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-
-	// Collect all rows before processing. SQLite does not allow writes
-	// to a table while a read cursor is open on it.
-	pending, err := s.repo.GetPendingUndelivered(tenantID, s.maxAttempts, limit)
+	pending, err := s.repo.GetPendingUndelivered(s.maxAttempts, limit)
 	if err != nil {
 		return fmt.Errorf("failed to get undelivered messages: %w", err)
 	}
-
 	for i := range pending {
 		if err := s.attemptMessageDelivery(&pending[i]); err != nil {
 			slog.Warn("Failed to deliver message",
-				"tenant_id", tenantID,
 				"message_id", pending[i].MessageID,
 				"user_id", pending[i].UserID,
 				"attempts", pending[i].Attempts,
 				"error", err)
 		}
 	}
-
 	return nil
 }
 
-// attemptMessageDelivery tries to deliver a message to a user
 func (s *Service) attemptMessageDelivery(msg *models.UndeliveredMessage) error {
-	// Check if user is online
 	s.deliveryAttempts.Add(1)
-	if s.realtimeSvc.IsUserOnline(msg.TenantID, msg.UserID) {
-		// Get the full message to send
-		fullMsg, err := s.repo.GetMessageByID(msg.TenantID, msg.MessageID)
+	if s.realtimeSvc.IsUserOnline(msg.UserID) {
+		fullMsg, err := s.repo.GetMessageByID(msg.MessageID)
 		if err != nil {
 			return fmt.Errorf("failed to get message: %w", err)
 		}
 
-		// Send via WebSocket
 		messagePayload := map[string]interface{}{
 			"type":       "message",
 			"room_id":    msg.ChatroomID,
@@ -95,37 +85,29 @@ func (s *Service) attemptMessageDelivery(msg *models.UndeliveredMessage) error {
 			"content":    fullMsg.Content,
 			"created_at": fullMsg.CreatedAt.Format(time.RFC3339),
 		}
-
 		if fullMsg.Meta != "" {
 			messagePayload["meta"] = fullMsg.Meta
 		}
 
-		s.realtimeSvc.SendToUser(msg.TenantID, msg.UserID, messagePayload)
-
-		// Mark as delivered
+		s.realtimeSvc.SendToUser(msg.UserID, messagePayload)
 		return s.repo.MarkMessageDelivered(msg.ID)
 	}
 
-	// User is offline, increment attempts
 	s.deliveryFailures.Add(1)
 	return s.repo.IncrementMessageAttempts(msg.ID)
 }
 
 // HandleNewMessage queues undelivered messages and fires webhooks for offline room members.
-// Call this after a message has been sent and broadcast to online users.
-// The work runs in the calling goroutine — wrap in go if you don't want to block.
-func (s *Service) HandleNewMessage(tenantID, roomID string, message *models.Message) {
-	members, err := s.chatroomSvc.GetRoomMembers(tenantID, roomID)
+func (s *Service) HandleNewMessage(roomID string, message *models.Message) {
+	members, err := s.chatroomSvc.GetRoomMembers(roomID)
 	if err != nil {
-		slog.Error("HandleNewMessage: failed to get room members",
-			"tenant_id", tenantID, "room_id", roomID, "error", err)
+		slog.Error("HandleNewMessage: failed to get room members", "room_id", roomID, "error", err)
 		return
 	}
 
-	room, err := s.chatroomSvc.GetRoom(tenantID, roomID)
+	room, err := s.chatroomSvc.GetRoom(roomID)
 	if err != nil {
-		slog.Error("HandleNewMessage: failed to get room",
-			"tenant_id", tenantID, "room_id", roomID, "error", err)
+		slog.Error("HandleNewMessage: failed to get room", "room_id", roomID, "error", err)
 		return
 	}
 
@@ -141,22 +123,19 @@ func (s *Service) HandleNewMessage(tenantID, roomID string, message *models.Mess
 		if member.UserID == message.SenderID {
 			continue
 		}
-		if s.realtimeSvc.IsUserOnline(tenantID, member.UserID) {
+		if s.realtimeSvc.IsUserOnline(member.UserID) {
 			continue
 		}
 
-		// Queue for the delivery worker to retry
-		if err := s.repo.QueueUndelivered(tenantID, member.UserID, roomID, message.MessageID, message.Seq); err != nil {
+		if err := s.repo.QueueUndelivered(member.UserID, roomID, message.MessageID, message.Seq); err != nil {
 			slog.Error("HandleNewMessage: failed to queue undelivered message",
-				"tenant_id", tenantID,
 				"user_id", member.UserID,
 				"message_id", message.MessageID,
 				"error", err)
 		}
 
-		// Fire webhook immediately so the app can push a notification
 		if s.webhookURL != "" {
-			go s.webhookSvc.NotifyOfflineUser(s.webhookURL, s.webhookSecret, tenantID, roomID, member.UserID, room.Metadata, msgInfo)
+			go s.webhookSvc.NotifyOfflineUser(s.webhookURL, s.webhookSecret, roomID, member.UserID, room.Metadata, msgInfo)
 		}
 	}
 }
@@ -172,44 +151,33 @@ func (s *Service) DeliveryFailures() int64 {
 }
 
 // ProcessNotifications processes pending notifications
-func (s *Service) ProcessNotifications(tenantID string, limit int) error {
+func (s *Service) ProcessNotifications(limit int) error {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-
-	pending, err := s.repo.GetPendingNotifications(tenantID, s.maxAttempts, limit)
+	pending, err := s.repo.GetPendingNotifications(s.maxAttempts, limit)
 	if err != nil {
 		return fmt.Errorf("failed to get pending notifications: %w", err)
 	}
-
 	for i := range pending {
 		if err := s.attemptNotificationDelivery(&pending[i]); err != nil {
 			slog.Warn("Failed to deliver notification",
-				"tenant_id", tenantID,
 				"notification_id", pending[i].NotificationID,
 				"topic", pending[i].Topic,
 				"attempts", pending[i].Attempts,
 				"error", err)
 		}
 	}
-
 	return nil
 }
 
 // DeliverNow immediately delivers a notification to online subscribers.
-// It is called by the HTTP handler after creating a notification so that
-// recipients do not have to wait for the next worker tick.
 func (s *Service) DeliverNow(notif *models.Notification) {
 	if err := s.attemptNotificationDelivery(notif); err != nil {
-		slog.Warn("Immediate notification delivery failed",
-			"notification_id", notif.NotificationID,
-			"error", err)
+		slog.Warn("Immediate notification delivery failed", "notification_id", notif.NotificationID, "error", err)
 	}
 }
 
-// attemptNotificationDelivery delivers a notification to the appropriate recipients.
-// Delivery is scoped by targets: specific user IDs, room members, topic subscribers,
-// or all online users in the tenant when no targets are specified.
 func (s *Service) attemptNotificationDelivery(notif *models.Notification) error {
 	payload := map[string]interface{}{
 		"type":            "notification",
@@ -219,15 +187,12 @@ func (s *Service) attemptNotificationDelivery(notif *models.Notification) error 
 		"timestamp":       time.Now().Unix(),
 	}
 
-	recipients := s.resolveRecipients(notif)
-	for _, userID := range recipients {
-		s.realtimeSvc.SendToUser(notif.TenantID, userID, payload)
+	for _, userID := range s.resolveRecipients(notif) {
+		s.realtimeSvc.SendToUser(userID, payload)
 	}
-
 	return s.repo.MarkNotificationDelivered(notif.NotificationID)
 }
 
-// resolveRecipients determines which online users should receive a notification.
 func (s *Service) resolveRecipients(notif *models.Notification) []string {
 	var targets models.NotificationTargets
 	if notif.Targets != "" {
@@ -245,37 +210,30 @@ func (s *Service) resolveRecipients(notif *models.Notification) []string {
 		}
 	}
 
-	// Explicit user list
 	for _, uid := range targets.UserIDs {
 		add(uid)
 	}
-
-	// Room members
 	if targets.RoomID != "" {
-		if members, err := s.chatroomSvc.GetRoomMembers(notif.TenantID, targets.RoomID); err == nil {
+		if members, err := s.chatroomSvc.GetRoomMembers(targets.RoomID); err == nil {
 			for _, m := range members {
 				add(m.UserID)
 			}
 		}
 	}
-
-	// Topic subscribers
 	if targets.TopicSubscribers {
-		if subscribers, err := s.repo.GetTopicSubscribers(notif.TenantID, notif.Topic); err == nil {
+		if subscribers, err := s.repo.GetTopicSubscribers(notif.Topic); err == nil {
 			for _, uid := range subscribers {
 				add(uid)
 			}
 		}
 	}
 
-	// Fallback: broadcast to all online users when no targets specified
 	if len(recipients) == 0 {
-		return s.realtimeSvc.GetOnlineUsers(notif.TenantID)
+		return s.realtimeSvc.GetOnlineUsers()
 	}
 
-	// Filter to online users only
 	online := make(map[string]struct{})
-	for _, uid := range s.realtimeSvc.GetOnlineUsers(notif.TenantID) {
+	for _, uid := range s.realtimeSvc.GetOnlineUsers() {
 		online[uid] = struct{}{}
 	}
 	var onlineRecipients []string
@@ -288,20 +246,14 @@ func (s *Service) resolveRecipients(notif *models.Notification) []string {
 }
 
 // CleanupOldEntries removes old delivered entries to prevent unbounded growth
-func (s *Service) CleanupOldEntries(tenantID string, maxAge time.Duration) error {
-	cutoffTime := time.Now().Add(-maxAge)
-
-	if err := s.repo.DeleteOldUndelivered(tenantID, s.maxAttempts, cutoffTime); err != nil {
+func (s *Service) CleanupOldEntries(maxAge time.Duration) error {
+	cutoff := time.Now().Add(-maxAge)
+	if err := s.repo.DeleteOldUndelivered(s.maxAttempts, cutoff); err != nil {
 		return err
 	}
-
-	if err := s.repo.DeleteOldNotifications(tenantID, cutoffTime); err != nil {
+	if err := s.repo.DeleteOldNotifications(cutoff); err != nil {
 		return err
 	}
-
-	slog.Info("Cleaned up old delivery entries",
-		"tenant_id", tenantID,
-		"max_age", maxAge)
-
+	slog.Info("Cleaned up old delivery entries", "max_age", maxAge)
 	return nil
 }

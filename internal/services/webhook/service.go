@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Service makes outbound HTTP calls to tenant-configured webhook URLs.
+// Service makes outbound HTTP calls to a configured webhook URL.
 type Service struct {
 	client *http.Client
 }
@@ -26,14 +26,13 @@ func NewService() *Service {
 // OfflineMessagePayload is the body POSTed to the webhook URL.
 type OfflineMessagePayload struct {
 	Event        string          `json:"event"` // always "message.new"
-	TenantID     string          `json:"tenant_id"`
 	RoomID       string          `json:"room_id"`
 	RecipientID  string          `json:"recipient_id"`
 	RoomMetadata json.RawMessage `json:"room_metadata,omitempty"`
 	Message      MessageInfo     `json:"message"`
 }
 
-// MessageInfo contains the fields the receiving app needs to build a notification.
+// MessageInfo contains the fields the receiving app needs to build a push notification.
 type MessageInfo struct {
 	MessageID string    `json:"message_id"`
 	SenderID  string    `json:"sender_id"`
@@ -46,20 +45,17 @@ type MessageInfo struct {
 // If webhookSecret is non-empty the request body is signed with HMAC-SHA256
 // and the signature is sent in the X-ChatAPI-Signature header as "sha256=<hex>".
 // The call is best-effort — failures are logged but do not affect message delivery.
-func (s *Service) NotifyOfflineUser(webhookURL, webhookSecret, tenantID, roomID, recipientID, roomMetadata string, msg MessageInfo) {
+func (s *Service) NotifyOfflineUser(webhookURL, webhookSecret, roomID, recipientID, roomMetadata string, msg MessageInfo) {
 	if webhookURL == "" {
 		return
 	}
 
 	payload := OfflineMessagePayload{
 		Event:       "message.new",
-		TenantID:    tenantID,
 		RoomID:      roomID,
 		RecipientID: recipientID,
 		Message:     msg,
 	}
-
-	// Embed raw metadata JSON directly rather than double-encoding it.
 	if roomMetadata != "" {
 		payload.RoomMetadata = json.RawMessage(roomMetadata)
 	}
@@ -85,20 +81,12 @@ func (s *Service) NotifyOfflineUser(webhookURL, webhookSecret, tenantID, roomID,
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		slog.Warn("webhook: delivery failed",
-			"url", webhookURL,
-			"tenant_id", tenantID,
-			"recipient_id", recipientID,
-			"error", err)
+		slog.Warn("webhook: delivery failed", "url", webhookURL, "recipient_id", recipientID, "error", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		slog.Warn("webhook: non-2xx response",
-			"url", webhookURL,
-			"status", resp.StatusCode,
-			"tenant_id", tenantID,
-			"recipient_id", recipientID)
+		slog.Warn("webhook: non-2xx response", "url", webhookURL, "status", resp.StatusCode, "recipient_id", recipientID)
 	}
 }

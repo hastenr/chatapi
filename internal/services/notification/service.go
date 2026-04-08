@@ -18,31 +18,31 @@ func NewService(repo repository.NotificationRepository) *Service {
 }
 
 // CreateNotification creates a new durable notification
-func (s *Service) CreateNotification(tenantID string, req *models.CreateNotificationRequest) (*models.Notification, error) {
-	notif, err := s.repo.Create(tenantID, req)
+func (s *Service) CreateNotification(req *models.CreateNotificationRequest) (*models.Notification, error) {
+	notif, err := s.repo.Create(req)
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("Created notification", "tenant_id", tenantID, "notification_id", notif.NotificationID, "topic", req.Topic)
+	slog.Info("Created notification", "notification_id", notif.NotificationID, "topic", req.Topic)
 	return notif, nil
 }
 
 // Subscribe subscribes a user to a notification topic
-func (s *Service) Subscribe(tenantID, subscriberID, topic string) (*models.NotificationSubscription, error) {
-	return s.repo.Subscribe(tenantID, subscriberID, topic)
+func (s *Service) Subscribe(subscriberID, topic string) (*models.NotificationSubscription, error) {
+	return s.repo.Subscribe(subscriberID, topic)
 }
 
 // Unsubscribe removes a subscription owned by the given user
-func (s *Service) Unsubscribe(tenantID, subscriberID string, id int) error {
-	return s.repo.Unsubscribe(tenantID, subscriberID, id)
+func (s *Service) Unsubscribe(subscriberID string, id int) error {
+	return s.repo.Unsubscribe(subscriberID, id)
 }
 
 // GetUserSubscriptions returns all subscriptions for a user
-func (s *Service) GetUserSubscriptions(tenantID, subscriberID string) ([]*models.NotificationSubscription, error) {
-	return s.repo.ListSubscriptions(tenantID, subscriberID)
+func (s *Service) GetUserSubscriptions(subscriberID string) ([]*models.NotificationSubscription, error) {
+	return s.repo.ListSubscriptions(subscriberID)
 }
 
 // GetFailedNotifications retrieves notifications that have failed delivery
-func (s *Service) GetFailedNotifications(tenantID string, limit int) ([]*models.Notification, error) {
-	return s.repo.GetFailed(tenantID, limit)
+func (s *Service) GetFailedNotifications(limit int) ([]*models.Notification, error) {
+	return s.repo.GetFailed(limit)
 }

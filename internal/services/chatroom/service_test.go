@@ -9,20 +9,18 @@ import (
 	"github.com/hastenr/chatapi/internal/testutil"
 )
 
-const defaultTenantID = "default"
-
-func newSvc(t *testing.T) (svc *chatroom.Service, tenantID string) {
+func newSvc(t *testing.T) *chatroom.Service {
 	t.Helper()
 	db := testutil.NewTestDB(t)
-	return chatroom.NewService(sqlite.NewRoomRepository(db.DB)), defaultTenantID
+	return chatroom.NewService(sqlite.NewRoomRepository(db.DB))
 }
 
 // --- CreateRoom ---
 
 func TestCreateRoom_Group(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	room, err := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	room, err := svc.CreateRoom(&models.CreateRoomRequest{
 		Type:    "group",
 		Name:    "general",
 		Members: []string{"alice", "bob"},
@@ -42,20 +40,20 @@ func TestCreateRoom_Group(t *testing.T) {
 }
 
 func TestCreateRoom_DM_Deduplication(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
 	req := &models.CreateRoomRequest{
 		Type:    "dm",
 		Members: []string{"alice", "bob"},
 	}
 
-	r1, err := svc.CreateRoom(tenantID, req)
+	r1, err := svc.CreateRoom(req)
 	if err != nil {
 		t.Fatalf("first CreateRoom: %v", err)
 	}
 
 	// Creating a DM with the same two users must return the existing room
-	r2, err := svc.CreateRoom(tenantID, req)
+	r2, err := svc.CreateRoom(req)
 	if err != nil {
 		t.Fatalf("second CreateRoom: %v", err)
 	}
@@ -65,13 +63,13 @@ func TestCreateRoom_DM_Deduplication(t *testing.T) {
 }
 
 func TestCreateRoom_DM_MemberOrderDoesNotMatter(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	r1, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	r1, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type:    "dm",
 		Members: []string{"alice", "bob"},
 	})
-	r2, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	r2, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type:    "dm",
 		Members: []string{"bob", "alice"},
 	})
@@ -82,9 +80,9 @@ func TestCreateRoom_DM_MemberOrderDoesNotMatter(t *testing.T) {
 }
 
 func TestCreateRoom_InvalidType(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	_, err := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	_, err := svc.CreateRoom(&models.CreateRoomRequest{
 		Type:    "invalid",
 		Members: []string{"alice", "bob"},
 	})
@@ -94,9 +92,9 @@ func TestCreateRoom_InvalidType(t *testing.T) {
 }
 
 func TestCreateRoom_DM_RequiresExactlyTwoMembers(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	_, err := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	_, err := svc.CreateRoom(&models.CreateRoomRequest{
 		Type:    "dm",
 		Members: []string{"alice"},
 	})
@@ -106,9 +104,9 @@ func TestCreateRoom_DM_RequiresExactlyTwoMembers(t *testing.T) {
 }
 
 func TestCreateRoom_WithMetadata(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	room, err := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	room, err := svc.CreateRoom(&models.CreateRoomRequest{
 		Type:     "group",
 		Name:     "support",
 		Members:  []string{"agent", "customer"},
@@ -125,13 +123,13 @@ func TestCreateRoom_WithMetadata(t *testing.T) {
 // --- GetRoom ---
 
 func TestGetRoom_Found(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	created, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	created, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"a", "b"},
 	})
 
-	got, err := svc.GetRoom(tenantID, created.RoomID)
+	got, err := svc.GetRoom(created.RoomID)
 	if err != nil {
 		t.Fatalf("GetRoom: %v", err)
 	}
@@ -141,39 +139,37 @@ func TestGetRoom_Found(t *testing.T) {
 }
 
 func TestGetRoom_NotFound(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	_, err := svc.GetRoom(tenantID, "nonexistent")
+	_, err := svc.GetRoom("nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent room, got nil")
 	}
 }
 
-func TestGetRoom_WrongTenant(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	svc := chatroom.NewService(sqlite.NewRoomRepository(db.DB))
+func TestGetRoom_WrongID(t *testing.T) {
+	svc := newSvc(t)
 
-	room, _ := svc.CreateRoom("tenant_a", &models.CreateRoomRequest{
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"a", "b"},
 	})
 
-	// A different tenant_id must not be able to access another tenant's room
-	_, err := svc.GetRoom("tenant_b", room.RoomID)
+	_, err := svc.GetRoom(room.RoomID + "-wrong")
 	if err == nil {
-		t.Error("tenant isolation broken: tenant_b can see tenant_a's room")
+		t.Error("expected error for wrong room ID, got nil")
 	}
 }
 
 // --- UpdateRoom ---
 
 func TestUpdateRoom_Name(t *testing.T) {
-	svc, tenantID := newSvc(t)
-	room, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc := newSvc(t)
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "old", Members: []string{"a", "b"},
 	})
 
 	newName := "new-name"
-	updated, err := svc.UpdateRoom(tenantID, room.RoomID, &models.UpdateRoomRequest{Name: &newName})
+	updated, err := svc.UpdateRoom(room.RoomID, &models.UpdateRoomRequest{Name: &newName})
 	if err != nil {
 		t.Fatalf("UpdateRoom: %v", err)
 	}
@@ -183,13 +179,13 @@ func TestUpdateRoom_Name(t *testing.T) {
 }
 
 func TestUpdateRoom_Metadata(t *testing.T) {
-	svc, tenantID := newSvc(t)
-	room, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc := newSvc(t)
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"a", "b"},
 	})
 
 	meta := `{"order_id":"ord_1"}`
-	updated, err := svc.UpdateRoom(tenantID, room.RoomID, &models.UpdateRoomRequest{Metadata: &meta})
+	updated, err := svc.UpdateRoom(room.RoomID, &models.UpdateRoomRequest{Metadata: &meta})
 	if err != nil {
 		t.Fatalf("UpdateRoom: %v", err)
 	}
@@ -199,13 +195,13 @@ func TestUpdateRoom_Metadata(t *testing.T) {
 }
 
 func TestUpdateRoom_NoFieldsIsNoop(t *testing.T) {
-	svc, tenantID := newSvc(t)
-	room, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc := newSvc(t)
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "original", Members: []string{"a", "b"},
 	})
 
 	// Empty update: both fields nil
-	got, err := svc.UpdateRoom(tenantID, room.RoomID, &models.UpdateRoomRequest{})
+	got, err := svc.UpdateRoom(room.RoomID, &models.UpdateRoomRequest{})
 	if err != nil {
 		t.Fatalf("UpdateRoom with no fields: %v", err)
 	}
@@ -215,10 +211,10 @@ func TestUpdateRoom_NoFieldsIsNoop(t *testing.T) {
 }
 
 func TestUpdateRoom_NotFound(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
 	name := "x"
-	_, err := svc.UpdateRoom(tenantID, "nonexistent", &models.UpdateRoomRequest{Name: &name})
+	_, err := svc.UpdateRoom("nonexistent", &models.UpdateRoomRequest{Name: &name})
 	if err == nil {
 		t.Error("expected error for nonexistent room, got nil")
 	}
@@ -227,12 +223,12 @@ func TestUpdateRoom_NotFound(t *testing.T) {
 // --- Members ---
 
 func TestGetRoomMembers(t *testing.T) {
-	svc, tenantID := newSvc(t)
-	room, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc := newSvc(t)
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"alice", "bob"},
 	})
 
-	members, err := svc.GetRoomMembers(tenantID, room.RoomID)
+	members, err := svc.GetRoomMembers(room.RoomID)
 	if err != nil {
 		t.Fatalf("GetRoomMembers: %v", err)
 	}
@@ -242,44 +238,44 @@ func TestGetRoomMembers(t *testing.T) {
 }
 
 func TestAddMember(t *testing.T) {
-	svc, tenantID := newSvc(t)
-	room, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc := newSvc(t)
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"alice", "bob"},
 	})
 
-	if err := svc.AddMember(tenantID, room.RoomID, "charlie"); err != nil {
+	if err := svc.AddMember(room.RoomID, "charlie"); err != nil {
 		t.Fatalf("AddMember: %v", err)
 	}
 
-	members, _ := svc.GetRoomMembers(tenantID, room.RoomID)
+	members, _ := svc.GetRoomMembers(room.RoomID)
 	if len(members) != 3 {
 		t.Errorf("got %d members after add, want 3", len(members))
 	}
 }
 
 func TestRemoveMember(t *testing.T) {
-	svc, tenantID := newSvc(t)
-	room, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc := newSvc(t)
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"alice", "bob"},
 	})
 
-	if err := svc.RemoveMember(tenantID, room.RoomID, "bob"); err != nil {
+	if err := svc.RemoveMember(room.RoomID, "bob"); err != nil {
 		t.Fatalf("RemoveMember: %v", err)
 	}
 
-	members, _ := svc.GetRoomMembers(tenantID, room.RoomID)
+	members, _ := svc.GetRoomMembers(room.RoomID)
 	if len(members) != 1 {
 		t.Errorf("got %d members after remove, want 1", len(members))
 	}
 }
 
 func TestRemoveMember_NotFound(t *testing.T) {
-	svc, tenantID := newSvc(t)
-	room, _ := svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc := newSvc(t)
+	room, _ := svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "test", Members: []string{"alice", "bob"},
 	})
 
-	err := svc.RemoveMember(tenantID, room.RoomID, "nonexistent")
+	err := svc.RemoveMember(room.RoomID, "nonexistent")
 	if err == nil {
 		t.Error("expected error removing nonexistent member, got nil")
 	}
@@ -288,19 +284,19 @@ func TestRemoveMember_NotFound(t *testing.T) {
 // --- GetUserRooms ---
 
 func TestGetUserRooms(t *testing.T) {
-	svc, tenantID := newSvc(t)
+	svc := newSvc(t)
 
-	svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "room1", Members: []string{"alice", "bob"},
 	})
-	svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "room2", Members: []string{"alice", "charlie"},
 	})
-	svc.CreateRoom(tenantID, &models.CreateRoomRequest{
+	svc.CreateRoom(&models.CreateRoomRequest{
 		Type: "group", Name: "room3", Members: []string{"bob", "charlie"},
 	})
 
-	aliceRooms, err := svc.GetUserRooms(tenantID, "alice")
+	aliceRooms, err := svc.GetUserRooms("alice")
 	if err != nil {
 		t.Fatalf("GetUserRooms: %v", err)
 	}
