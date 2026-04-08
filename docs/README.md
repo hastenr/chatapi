@@ -90,15 +90,9 @@ hugo new section/_index.md
 
 ## API Documentation
 
-### OpenAPI Specification
-
-The REST API is documented using OpenAPI 3.0 specification in `static/api/openapi.yaml`.
-
 ### Updating API Docs
 
-1. Edit the OpenAPI specification
-2. Update the corresponding documentation pages in `content/api/`
-3. Test the API playground functionality
+1. Update the documentation pages in `content/api/`
 
 ## Deployment
 

@@ -1,66 +1,272 @@
 openapi: 3.0.3
 info:
   title: ChatAPI
+  version: 1.0.0
   description: |
-    A lightweight, multitenant chat service built in Go with SQLite, WebSocket support, and durable message delivery.
+    Self-hosted chat infrastructure for AI-powered apps. Single-tenant per deployment.
 
     ## Authentication
 
-    Most endpoints require two headers:
-    - `X-API-Key`: Your tenant API key (issued once at tenant creation — store it securely)
-    - `X-User-Id`: The user performing the action
+    All endpoints except `/health` and `/metrics` require a JWT Bearer token:
 
-    Admin endpoints (`/admin/*`) use a separate master key:
-    - `X-Master-Key`: The server-wide master key (set via `MASTER_API_KEY` env var)
-
-    ## WebSocket Authentication
-
-    The WebSocket endpoint (`GET /ws`) supports two authentication methods:
-
-    **Server/Node.js clients** — pass credentials via headers at connection time:
     ```
-    X-API-Key: <api-key>
-    X-User-Id: <user-id>   (or ?user_id=<id> query param)
+    Authorization: Bearer <jwt>
     ```
 
-    **Browser clients** — browsers cannot set custom WebSocket headers. Use the token flow:
-    1. Call `POST /ws/token` with `X-API-Key` + `X-User-Id` to obtain a short-lived token
-    2. Connect to `/ws?token=<token>` — the token authenticates the connection
+    Your backend signs JWTs with `JWT_SECRET`. The `sub` claim is the user ID.
 
-    Tokens are single-use and expire after 60 seconds.
-
-    > **Security note**: The `?api_key=` query parameter was removed as a security fix (query params appear in server logs). Do not attempt to authenticate via that method.
-
-    ## Error Responses
-
-    All errors return a JSON body with this shape:
-
-    ```json
-    { "error": "error_code", "message": "Human-readable description" }
+    WebSocket connections accept the token as a query parameter:
     ```
-  version: 1.0.0
+    ws://your-host/ws?token=<jwt>
+    ```
+
+  license:
+    name: MIT
+    url: https://github.com/hastenr/chatapi/blob/main/LICENSE
   contact:
-    name: ChatAPI Team
     url: https://github.com/hastenr/chatapi
 
 servers:
-  - url: https://chatapi.hastenr.com
-    description: Production server
   - url: http://localhost:8080
-    description: Local development server
+    description: Local development
 
 security:
-  - ApiKeyAuth: []
-    UserIdAuth: []
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    RoomID:
+      name: room_id
+      in: path
+      required: true
+      schema:
+        type: string
+    MessageID:
+      name: message_id
+      in: path
+      required: true
+      schema:
+        type: string
+    BotID:
+      name: bot_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Not the resource owner
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error, message]
+
+    Room:
+      type: object
+      properties:
+        room_id:
+          type: string
+        type:
+          type: string
+          enum: [dm, group]
+        name:
+          type: string
+        last_seq:
+          type: integer
+        metadata:
+          type: string
+          description: Arbitrary JSON for app-level context
+        created_at:
+          type: string
+          format: date-time
+      required: [room_id, type, last_seq, created_at]
+
+    RoomMember:
+      type: object
+      properties:
+        chatroom_id:
+          type: string
+        user_id:
+          type: string
+        role:
+          type: string
+        joined_at:
+          type: string
+          format: date-time
+      required: [chatroom_id, user_id, role, joined_at]
+
+    Message:
+      type: object
+      properties:
+        message_id:
+          type: string
+        chatroom_id:
+          type: string
+        sender_id:
+          type: string
+        seq:
+          type: integer
+        content:
+          type: string
+        meta:
+          type: string
+          description: Arbitrary JSON metadata
+        created_at:
+          type: string
+          format: date-time
+      required: [message_id, chatroom_id, sender_id, seq, content, created_at]
+
+    Bot:
+      type: object
+      properties:
+        bot_id:
+          type: string
+        name:
+          type: string
+        mode:
+          type: string
+          enum: [llm, external]
+        provider:
+          type: string
+          enum: [openai, anthropic]
+        base_url:
+          type: string
+        model:
+          type: string
+        system_prompt:
+          type: string
+        max_context:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      required: [bot_id, name, mode, max_context, created_at]
+
+    CreateBotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+          enum: [llm, external]
+        provider:
+          type: string
+          enum: [openai, anthropic]
+        base_url:
+          type: string
+          description: Optional override for OpenAI-compatible endpoints
+        model:
+          type: string
+        api_key:
+          type: string
+        system_prompt:
+          type: string
+        max_context:
+          type: integer
+          description: Max messages to include in context window (default 20)
+      required: [name, mode]
+
+    Notification:
+      type: object
+      properties:
+        notification_id:
+          type: string
+        topic:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [pending, processing, delivered, failed, dead]
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      required: [notification_id, topic, payload, status, attempts, created_at]
+
+    NotificationSubscription:
+      type: object
+      properties:
+        id:
+          type: integer
+        subscriber_id:
+          type: string
+        topic:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, subscriber_id, topic, created_at]
+
+    UndeliveredMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+        chatroom_id:
+          type: string
+        message_id:
+          type: string
+        seq:
+          type: integer
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        last_attempt_at:
+          type: string
+          format: date-time
+      required: [id, user_id, chatroom_id, message_id, seq, attempts, created_at]
 
 paths:
   /health:
     get:
       summary: Health check
-      description: Check service health and status
       security: []
+      tags: [System]
       responses:
-        '200':
+        "200":
           description: Service is healthy
           content:
             application/json:
@@ -69,130 +275,97 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: "ok"
-                  service:
-                    type: string
-                    example: "chatapi"
-                  uptime:
-                    type: string
-                    example: "2h30m45s"
-                  db_writable:
-                    type: boolean
-                    example: true
-        '503':
-          description: Database not writable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                    example: ok
 
   /metrics:
     get:
-      summary: Server metrics
-      description: Returns live server metrics counters. No authentication required.
+      summary: Live server counters
       security: []
+      tags: [System]
       responses:
-        '200':
-          description: Current server metrics
+        "200":
+          description: Server metrics
           content:
             application/json:
               schema:
                 type: object
-                properties:
-                  active_connections:
-                    type: integer
-                    description: Number of currently open WebSocket connections
-                    example: 42
-                  messages_sent:
-                    type: integer
-                    description: Total messages sent since server start
-                    example: 18340
-                  delivery_attempts:
-                    type: integer
-                    description: Total delivery attempts made by the background worker
-                    example: 21005
-                  delivery_failures:
-                    type: integer
-                    description: Total delivery attempts that failed permanently
-                    example: 12
-                  broadcast_drops:
-                    type: integer
-                    description: Broadcast messages dropped due to slow consumers
-                    example: 3
-                  uptime_seconds:
-                    type: integer
-                    description: Server uptime in seconds
-                    example: 86400
+                additionalProperties: true
 
   /rooms:
     get:
-      summary: List rooms
-      description: List all rooms the authenticated user belongs to.
+      summary: List rooms the authenticated user belongs to
+      tags: [Rooms]
       responses:
-        '200':
-          description: Rooms the user is a member of
+        "200":
+          description: List of rooms
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  rooms:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Room'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
     post:
-      summary: Create room
-      description: Create a new chat room (DM, group, or channel).
+      summary: Create a room
+      tags: [Rooms]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateRoomRequest'
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [dm, group]
+                members:
+                  type: array
+                  items:
+                    type: string
+                  description: User IDs to add (including the caller)
+                name:
+                  type: string
+                metadata:
+                  type: string
+                  description: Arbitrary JSON
+              required: [type, members]
       responses:
-        '201':
-          description: Room created successfully
+        "200":
+          description: Room created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Room'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '409':
-          description: Room already exists (for DMs)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/Room"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /rooms/{room_id}:
     get:
-      summary: Get room
-      description: Retrieve room information.
+      summary: Get room details
+      tags: [Rooms]
       parameters:
-        - $ref: '#/components/parameters/RoomID'
+        - $ref: "#/components/parameters/RoomID"
       responses:
-        '200':
-          description: Room information
+        "200":
+          description: Room details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Room'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+                $ref: "#/components/schemas/Room"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
     patch:
-      summary: Update room
-      description: Update a room's name and/or metadata. Only provided fields are changed; omitting a field leaves it unchanged.
+      summary: Update room name or metadata
+      tags: [Rooms]
       parameters:
-        - $ref: '#/components/parameters/RoomID'
+        - $ref: "#/components/parameters/RoomID"
       requestBody:
         required: true
         content:
@@ -202,230 +375,287 @@ paths:
               properties:
                 name:
                   type: string
-                  nullable: true
-                  example: "New Room Name"
                 metadata:
                   type: string
-                  nullable: true
-                  description: Arbitrary JSON string
-                  example: '{"listing_id":"lst_99"}'
+                  description: Arbitrary JSON
       responses:
-        '200':
+        "200":
           description: Updated room
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Room'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+                $ref: "#/components/schemas/Room"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /rooms/{room_id}/members:
     get:
       summary: List room members
-      description: Get all members of a room.
+      tags: [Rooms]
       parameters:
-        - $ref: '#/components/parameters/RoomID'
+        - $ref: "#/components/parameters/RoomID"
       responses:
-        '200':
-          description: Room members
+        "200":
+          description: List of members
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  members:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        user_id:
-                          type: string
-                        role:
-                          type: string
-                          default: "member"
-                        joined_at:
-                          type: string
-                          format: date-time
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoomMember"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
-  /rooms/{room_id}/messages:
     post:
-      summary: Send message
-      description: Send a message to a room.
+      summary: Add a member (user or bot) to a room
+      tags: [Rooms]
       parameters:
-        - $ref: '#/components/parameters/RoomID'
+        - $ref: "#/components/parameters/RoomID"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - content
               properties:
-                content:
+                user_id:
                   type: string
-                  example: "Hello, world!"
-                meta:
-                  type: string
-                  nullable: true
-                  description: Arbitrary JSON string to attach to the message (e.g. message type, mentions, reactions metadata)
-                  example: '{"type":"text","mentions":["user2"]}'
+                  description: User ID or bot ID to add
+              required: [user_id]
       responses:
-        '200':
-          description: Message sent successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Message'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+        "200":
+          description: Member added
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
+  /rooms/{room_id}/messages:
     get:
-      summary: Get messages
-      description: Retrieve messages from a room with optional cursor-based pagination.
+      summary: List messages in a room (paginated)
+      tags: [Messages]
       parameters:
-        - $ref: '#/components/parameters/RoomID'
+        - $ref: "#/components/parameters/RoomID"
         - name: after_seq
           in: query
-          description: Return only messages with seq greater than this value
           schema:
             type: integer
-            minimum: 0
+          description: Return messages with seq > after_seq
         - name: limit
           in: query
           schema:
             type: integer
-            minimum: 1
-            maximum: 100
             default: 50
+            maximum: 100
       responses:
-        '200':
-          description: Messages retrieved
+        "200":
+          description: List of messages
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  messages:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Message'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
-  /rooms/{room_id}/messages/{message_id}:
-    delete:
-      summary: Delete message
-      description: Permanently delete a message. Only the original sender may delete their own messages. Broadcasts a `message.deleted` WebSocket event to the room.
+    post:
+      summary: Send a message to a room
+      tags: [Messages]
       parameters:
-        - $ref: '#/components/parameters/RoomID'
-        - $ref: '#/components/parameters/MessageID'
-      responses:
-        '204':
-          description: Message deleted
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '403':
-          $ref: '#/components/responses/AuthorizationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-
-    put:
-      summary: Edit message
-      description: Update the content of a message. Only the original sender may edit their own messages. Broadcasts a `message.edited` WebSocket event to the room.
-      parameters:
-        - $ref: '#/components/parameters/RoomID'
-        - $ref: '#/components/parameters/MessageID'
+        - $ref: "#/components/parameters/RoomID"
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - content
               properties:
                 content:
                   type: string
-                  example: "Edited message content"
+                meta:
+                  type: string
+                  description: Arbitrary JSON metadata
+              required: [content]
       responses:
-        '200':
+        "200":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rooms/{room_id}/messages/{message_id}:
+    put:
+      summary: Edit a message (sender only)
+      tags: [Messages]
+      parameters:
+        - $ref: "#/components/parameters/RoomID"
+        - $ref: "#/components/parameters/MessageID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+              required: [content]
+      responses:
+        "200":
           description: Updated message
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Message'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '403':
-          $ref: '#/components/responses/AuthorizationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      summary: Delete a message (sender only)
+      tags: [Messages]
+      parameters:
+        - $ref: "#/components/parameters/RoomID"
+        - $ref: "#/components/parameters/MessageID"
+      responses:
+        "204":
+          description: Message deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /acks:
     post:
-      summary: Acknowledge messages
-      description: Mark messages as delivered up to a specific sequence number.
+      summary: Acknowledge message delivery up to a sequence number
+      tags: [Messages]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - room_id
-                - seq
               properties:
                 room_id:
                   type: string
-                  example: "room_abc123"
                 seq:
                   type: integer
-                  example: 43
+              required: [room_id, seq]
       responses:
-        '200':
-          description: Acknowledgment processed
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
+        "200":
+          description: Acknowledged
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /bots:
+    get:
+      summary: List registered bots
+      tags: [Bots]
+      responses:
+        "200":
+          description: List of bots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      summary: Register a new bot
+      tags: [Bots]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBotRequest"
+      responses:
+        "200":
+          description: Bot registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /bots/{bot_id}:
+    get:
+      summary: Get a bot by ID
+      tags: [Bots]
+      parameters:
+        - $ref: "#/components/parameters/BotID"
+      responses:
+        "200":
+          description: Bot details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      summary: Delete a bot
+      tags: [Bots]
+      parameters:
+        - $ref: "#/components/parameters/BotID"
+      responses:
+        "204":
+          description: Bot deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /notify:
     post:
-      summary: Send notification
-      description: Send a notification to users or room members. Delivered immediately to online targets; persisted for retry if `durable_notifications` is enabled.
+      summary: Send a durable notification
+      tags: [Notifications]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - topic
-                - payload
               properties:
                 topic:
                   type: string
-                  example: "order.shipped"
                 payload:
                   type: object
-                  example:
-                    order_id: "12345"
-                    tracking_number: "1Z999AA1234567890"
+                  additionalProperties: true
                 targets:
                   type: object
                   properties:
@@ -437,73 +667,65 @@ paths:
                       type: string
                     topic_subscribers:
                       type: boolean
-                      default: false
+                      description: Deliver to all subscribers of the topic
+              required: [topic, payload, targets]
       responses:
-        '202':
-          description: Notification queued for delivery
+        "200":
+          description: Notification queued
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  notification_id:
-                    type: string
-                  created_at:
-                    type: string
-                    format: date-time
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
+                $ref: "#/components/schemas/Notification"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /subscriptions:
     get:
-      summary: List subscriptions
-      description: List all notification topic subscriptions for the authenticated user.
+      summary: List the current user's topic subscriptions
+      tags: [Notifications]
       responses:
-        '200':
-          description: User subscriptions
+        "200":
+          description: List of subscriptions
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  subscriptions:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/NotificationSubscription'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationSubscription"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
     post:
-      summary: Subscribe to topic
-      description: Subscribe the authenticated user to a notification topic. They will receive notifications sent with `topic_subscribers: true` for this topic.
+      summary: Subscribe to a notification topic
+      tags: [Notifications]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - topic
               properties:
                 topic:
                   type: string
-                  example: "order.shipped"
+              required: [topic]
       responses:
-        '201':
+        "200":
           description: Subscription created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NotificationSubscription'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
+                $ref: "#/components/schemas/NotificationSubscription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /subscriptions/{id}:
     delete:
-      summary: Unsubscribe
-      description: Remove a notification topic subscription by ID.
+      summary: Unsubscribe from a topic
+      tags: [Notifications]
       parameters:
         - name: id
           in: path
@@ -511,333 +733,39 @@ paths:
           schema:
             type: integer
       responses:
-        '204':
-          description: Subscription removed
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-
-  /ws/token:
-    post:
-      summary: Issue WebSocket token
-      description: |
-        Issues a short-lived, single-use WebSocket authentication token for browser clients that cannot set custom HTTP headers.
-
-        After obtaining a token, connect to the WebSocket endpoint with `?token=<token>`. The token is valid for 60 seconds and is consumed on first use.
-      responses:
-        '200':
-          description: Token issued successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: Single-use WebSocket authentication token
-                    example: "wst_a1b2c3d4e5f6..."
-                  expires_in:
-                    type: integer
-                    description: Token validity period in seconds
-                    example: 60
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-
-  /admin/tenants:
-    post:
-      summary: Create tenant
-      description: |
-        Create a new tenant with an auto-generated API key.
-
-        **Requires `X-Master-Key` header** (not `X-API-Key`). The `api_key` in the response is shown exactly once — store it securely. It is stored as a SHA-256 hash in the database and cannot be retrieved again.
-      security:
-        - MasterKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - name
-              properties:
-                name:
-                  type: string
-                  example: "MyCompany"
-      responses:
-        '201':
-          description: Tenant created successfully. The `api_key` field is returned only in this response and will never be shown again.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  tenant_id:
-                    type: string
-                    example: "tenant_abc123"
-                  name:
-                    type: string
-                    example: "MyCompany"
-                  api_key:
-                    type: string
-                    description: Plaintext API key — returned once only. Store it immediately.
-                    example: "a1b2c3d4e5f6..."
-                  created_at:
-                    type: string
-                    format: date-time
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "204":
+          description: Unsubscribed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /admin/dead-letters:
     get:
-      summary: Get dead letters
-      description: View failed message and notification deliveries for the authenticated tenant.
+      summary: List failed (dead-letter) messages and notifications
+      tags: [Admin]
       parameters:
         - name: limit
           in: query
           schema:
             type: integer
-            minimum: 1
-            maximum: 1000
             default: 100
+            maximum: 1000
       responses:
-        '200':
-          description: Dead letter entries
+        "200":
+          description: Dead-letter items
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  failed_messages:
+                  messages:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        message_id:
-                          type: string
-                        user_id:
-                          type: string
-                        room_id:
-                          type: string
-                        attempts:
-                          type: integer
-                        last_attempt_at:
-                          type: string
-                          format: date-time
-                  failed_notifications:
+                      $ref: "#/components/schemas/UndeliveredMessage"
+                  notifications:
                     type: array
                     items:
-                      type: object
-                      properties:
-                        notification_id:
-                          type: string
-                        topic:
-                          type: string
-                        attempts:
-                          type: integer
-                        last_attempt_at:
-                          type: string
-                          format: date-time
-        '401':
-          $ref: '#/components/responses/AuthenticationError'
-
-components:
-  parameters:
-    RoomID:
-      name: room_id
-      in: path
-      required: true
-      schema:
-        type: string
-      example: "room_abc123"
-    MessageID:
-      name: message_id
-      in: path
-      required: true
-      schema:
-        type: string
-      example: "msg_def456"
-
-  securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
-      description: Tenant API key for authentication. Stored as a SHA-256 hash server-side; the plaintext key is returned only once at tenant creation.
-    UserIdAuth:
-      type: apiKey
-      in: header
-      name: X-User-Id
-      description: User identifier for authorization
-    MasterKeyAuth:
-      type: apiKey
-      in: header
-      name: X-Master-Key
-      description: Server-wide master key for administrative operations. Set via the `MASTER_API_KEY` environment variable.
-
-  schemas:
-    Room:
-      type: object
-      properties:
-        room_id:
-          type: string
-          example: "room_abc123"
-        type:
-          type: string
-          enum: [dm, group, channel]
-          example: "dm"
-        name:
-          type: string
-          nullable: true
-          example: "Team Chat"
-        metadata:
-          type: string
-          nullable: true
-          description: Arbitrary JSON string set at room creation. Useful for attaching app-level context such as listing_id, order_id, or other domain data.
-          example: '{"listing_id":"lst_99","order_id":"ord_42"}'
-        last_seq:
-          type: integer
-          example: 42
-        created_at:
-          type: string
-          format: date-time
-
-    CreateRoomRequest:
-      type: object
-      required:
-        - type
-        - members
-      properties:
-        type:
-          type: string
-          enum: [dm, group, channel]
-          example: "dm"
-        members:
-          type: array
-          items:
-            type: string
-          example: ["user1", "user2"]
-        name:
-          type: string
-          example: "Team Chat"
-        metadata:
-          type: string
-          nullable: true
-          description: Arbitrary JSON string to associate with the room. Stored as-is and included in webhook payloads for offline delivery.
-          example: '{"listing_id":"lst_99"}'
-
-    Message:
-      type: object
-      properties:
-        message_id:
-          type: string
-          example: "msg_abc123"
-        sender_id:
-          type: string
-          example: "user1"
-        seq:
-          type: integer
-          example: 41
-        content:
-          type: string
-          example: "Hello, world!"
-        meta:
-          type: string
-          nullable: true
-          description: Arbitrary JSON string attached to the message at send time (e.g. message type, mentions, client metadata).
-          example: '{"type":"text","mentions":["user2"]}'
-        created_at:
-          type: string
-          format: date-time
-
-    NotificationSubscription:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
-        subscriber_id:
-          type: string
-          example: "user1"
-        topic:
-          type: string
-          example: "order.shipped"
-        created_at:
-          type: string
-          format: date-time
-
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-          example: "not_found"
-        message:
-          type: string
-          example: "Room not found"
-
-  responses:
-    ValidationError:
-      description: Validation error
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: "invalid_request"
-            message: "content is required"
-
-    AuthenticationError:
-      description: Authentication failed
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: "unauthorized"
-            message: "Invalid API key"
-
-    AuthorizationError:
-      description: Insufficient permissions
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: "forbidden"
-            message: "You can only delete your own messages"
-
-    NotFoundError:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: "not_found"
-            message: "Room not found"
-
-    RateLimitError:
-      description: Rate limit exceeded
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: "rate_limit_exceeded"
-            message: "Too many requests"
-
-    InternalError:
-      description: Server internal error
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: "internal_error"
-            message: "An unexpected error occurred"
+                      $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"

@@ -92,6 +92,15 @@ HTTP error responses are flat JSON:
 - Run all tests: `go test ./...`
 - Run one package: `go test -count=1 -timeout=30s ./internal/services/chatroom/`
 
+## Keeping Docs in Sync
+
+Any change that adds, removes, or modifies an API endpoint, request/response shape, auth scheme, or WebSocket event **must** update:
+
+1. `docs/static/api/openapi.yaml` — the machine-readable spec (used for client generation)
+2. The relevant page under `docs/content/api/` — `rest.md`, `websocket.md`, or `_index.md`
+
+This applies to handler additions, route changes, model renames, and status code corrections.
+
 ## What We Don't Do
 
 - No MCP server — REST API is sufficient for agent integration
@@ -99,4 +108,4 @@ HTTP error responses are flat JSON:
 - No hosted SaaS infrastructure in this repo
 - No visual builders or no-code tooling
 - No agent framework or LLM orchestration — ChatAPI is the communication layer, not the brain
-- No multi-tenancy — single workspace per deployment (`tenant_id = "default"` hardcoded)
+- No multi-tenancy — single workspace per deployment
