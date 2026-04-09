@@ -6,9 +6,9 @@ weight = 1
 
 # ChatAPI
 
-The messaging layer for apps where AI is a participant. Single binary, self-hosted, open source.
+The messaging layer for apps where AI is a participant.
 
-Building an app where users talk to an AI? ChatAPI gives you real-time WebSocket rooms, LLM streaming built into the messaging layer, and AI bots that join rooms like any other user — without managing a complex infrastructure stack.
+Drop-in WebSocket rooms with LLM streaming baked into the messaging layer — no infrastructure to manage beyond a single binary. Self-hosted, open source.
 
 ## Features
 
@@ -26,7 +26,7 @@ Building an app where users talk to an AI? ChatAPI gives you real-time WebSocket
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.22+
 - `JWT_SECRET` environment variable (required — server will not start without it)
 
 ### Run from source

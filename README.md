@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://golang.org/"><img src="https://img.shields.io/badge/go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go version" /></a>
+  <a href="https://golang.org/"><img src="https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00ED64?style=flat-square&labelColor=001E2B" alt="License" /></a>
   <a href="https://github.com/hastenr/chatapi/releases"><img src="https://img.shields.io/github/v/release/hastenr/chatapi?style=flat-square&color=00ED64&labelColor=001E2B" alt="Release" /></a>
   <a href="https://github.com/hastenr/chatapi/actions"><img src="https://img.shields.io/github/actions/workflow/status/hastenr/chatapi/ci.yml?style=flat-square&labelColor=001E2B" alt="CI" /></a>
@@ -22,7 +22,7 @@
 
 ---
 
-Building an app where users talk to an AI? ChatAPI is the messaging infrastructure that makes it work — real-time WebSocket rooms, LLM streaming built in, and AI bots that participate like any other user. Single binary, self-hosted, open source.
+Drop-in WebSocket rooms with LLM streaming baked into the messaging layer — no infrastructure to manage beyond a single binary. Self-hosted, open source.
 
 ## Features
 
