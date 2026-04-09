@@ -84,14 +84,18 @@ func (s *Service) UnregisterConnection(userID string, conn *websocket.Conn) {
 	if len(s.connections[userID]) == 0 {
 		delete(s.connections, userID)
 		time.AfterFunc(5*time.Second, func() {
+			broadcast := false
 			s.mu.Lock()
 			if presenceTime, exists := s.presence[userID]; exists {
 				if time.Since(presenceTime) >= 5*time.Second {
 					delete(s.presence, userID)
-					s.broadcastPresenceUpdate(userID, "offline")
+					broadcast = true
 				}
 			}
 			s.mu.Unlock()
+			if broadcast {
+				s.broadcastPresenceUpdate(userID, "offline")
+			}
 		})
 	}
 
