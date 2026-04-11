@@ -22,21 +22,52 @@
 
 ---
 
-Drop-in WebSocket rooms with LLM streaming baked into the messaging layer — no infrastructure to manage beyond a single binary. Self-hosted, open source.
+Most chat infrastructure was built before AI was a participant in the conversation. Bolting LLM support onto those systems means wrestling with per-MAU pricing, vendor lock-in, and data leaving your infrastructure.
+
+ChatAPI is built for the other case: apps where one or more participants is an AI. Your agent — whether it calls OpenAI, runs RAG, or does multi-step reasoning — connects to ChatAPI like any other user. ChatAPI handles the rest: real-time delivery, message history, presence, streaming, and offline webhooks. Single binary. Your data, your server.
+
+## How it works
+
+```
+  Your users
+     ↕  WebSocket
+   ChatAPI
+     ↕  REST / WebSocket (bot JWT)
+  Your AI agent
+     ↕
+  OpenAI · Anthropic · Ollama · RAG · anything
+```
+
+Your agent is a normal process. It connects to ChatAPI with a JWT, receives messages, calls whatever LLM or pipeline it needs, and posts the reply back. ChatAPI streams the response to every connected client in real time. No vendor lock-in. No framework constraints. Swap models without touching your infrastructure.
 
 ## Features
 
-- **AI bots as first-class participants** — register a bot to get a stable identity, add it to any room. Your agent connects via JWT like any user and handles all the LLM logic.
-- **LLM streaming** — token-by-token responses over WebSocket (`message.stream.*`). Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible endpoint.
-- **Real-time messaging** — DM and group rooms with presence, typing indicators, and at-least-once delivery.
-- **JWT auth** — your backend signs tokens, ChatAPI validates them. No API keys, no sessions.
-- **Webhook for offline users** — when a message arrives for an offline user, ChatAPI calls your endpoint so you can send push notifications.
+- **Real-time WebSocket messaging** — DM and group rooms with presence, typing indicators, and at-least-once delivery guarantees
+- **LLM streaming** — token-by-token responses over WebSocket via `message.stream.*` events
+- **AI bots as first-class participants** — bots join rooms like users; your agent controls all the logic
+- **JWT auth** — your backend signs tokens, ChatAPI validates them. No API keys, no sessions, no vendor accounts
+- **Webhook for offline delivery** — ChatAPI calls your endpoint when a message arrives for an offline user, so you can trigger push notifications
 - **TypeScript SDK** — `npm install @hastenr/chatapi-sdk`
-- **Portable by design** — swap SQLite → PostgreSQL or local pub/sub → Redis without touching business logic.
+- **Single binary** — SQLite included, no external services required at runtime
+- **Portable** — swap SQLite → PostgreSQL or local pub/sub → Redis by implementing one interface. Zero service changes.
 
-## Quick Start
+## Quick start
 
-> Requires CGO for the SQLite driver. Install gcc if needed: `brew install gcc` / `apt install build-essential`
+```bash
+docker run -d \
+  -p 8080:8080 \
+  -e JWT_SECRET=$(openssl rand -base64 32) \
+  -e ALLOWED_ORIGINS="*" \
+  -v chatapi-data:/data \
+  hastenr/chatapi:latest
+```
+
+```bash
+curl http://localhost:8080/health
+# {"status":"ok","db_writable":true}
+```
+
+Or from source (requires gcc for the SQLite driver):
 
 ```bash
 git clone https://github.com/hastenr/chatapi.git
@@ -45,36 +76,49 @@ cp .env.example .env    # set JWT_SECRET
 go run ./cmd/chatapi
 ```
 
-```bash
-curl http://localhost:8080/health
-# {"status":"ok","db_writable":true}
-```
+## Connect your agent in 5 minutes
 
-Or run with Docker — no build toolchain needed:
+**1. Register a bot**
 
 ```bash
-docker run -d \
-  -p 8080:8080 \
-  -e JWT_SECRET=$(openssl rand -base64 32) \
-  -e ALLOWED_ORIGINS="*" \
-  -v chatapi-data:/data \
-  -e DATABASE_DSN=file:/data/chatapi.db \
-  hastenr/chatapi:latest
+TOKEN="<jwt signed with your JWT_SECRET>"
+
+curl -X POST http://localhost:8080/bots \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Support Bot"}'
+# {"bot_id": "bot_abc123", ...}
 ```
 
-## How It Works
+**2. Add the bot to a room**
 
-ChatAPI is the messaging layer — not an AI framework. Your agent lives outside; ChatAPI connects it to your users.
-
-```
-Your AI agent (any LLM / framework)
-        ↕  REST API
-    ChatAPI room
-        ↕  WebSocket
-      End user
+```bash
+curl -X POST http://localhost:8080/rooms/room_123/members \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"user_id": "bot_abc123"}'
 ```
 
-**Bots** — register a bot to get a stable `bot_id`, add it to a room as a member. Your agent process mints a JWT with `sub: <bot_id>` and connects over WebSocket or REST like any user. It can use any LLM, any framework — ChatAPI just routes the messages.
+**3. Connect your agent**
+
+```javascript
+// Mint a JWT with sub = bot_abc123, connect like any user
+const ws = new WebSocket(`wss://your-server/ws?token=${botJWT}`);
+
+ws.onmessage = async (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type !== "message") return;
+
+  // Call your LLM, run RAG, do whatever you need
+  const reply = await callYourPipeline(msg.content);
+
+  ws.send(JSON.stringify({
+    type: "send_message",
+    data: { room_id: msg.room_id, content: reply },
+  }));
+};
+```
+
+Your users see the reply in real time. Message history is stored. Offline users get a webhook.
 
 ## Deploy
 
@@ -87,21 +131,20 @@ Your AI agent (any LLM / framework)
 
 ## Configuration
 
-Only two variables are required:
+Two variables are required, everything else has a sensible default:
 
 ```env
-JWT_SECRET=your-secret-here          # generate: openssl rand -base64 32
+JWT_SECRET=your-secret-here          # openssl rand -base64 32
 ALLOWED_ORIGINS=https://yourapp.com  # required for browser clients
 ```
 
-Everything else has a sensible default. See [`.env.example`](.env.example).
+See [`.env.example`](.env.example) for the full reference.
 
 ## Scaling
 
-Runs on a single instance out of the box — SQLite, no external services, deploys on a $6 VPS.
+Runs on a single $6 VPS out of the box. When you outgrow it:
 
-When you outgrow it:
-- **PostgreSQL** — implement the repository interfaces with `$1` placeholders. Zero service changes.
+- **PostgreSQL** — implement the repository interfaces. Zero service changes.
 - **Horizontal scaling** — implement `broker.Broker` backed by Redis pub/sub. Zero service changes.
 
 ## License
