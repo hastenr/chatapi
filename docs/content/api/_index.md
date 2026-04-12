@@ -74,11 +74,11 @@ ws://localhost:8080/ws                    # server (Authorization header)
 The official TypeScript SDK is available on npm:
 
 ```bash
-npm install @getchatapi/chatapi-sdk
+npm install @hastenr/chatapi-sdk
 ```
 
 ```typescript
-import { ChatAPI } from '@getchatapi/chatapi-sdk';
+import { ChatAPI } from '@hastenr/chatapi-sdk';
 
 const client = new ChatAPI({
   baseURL: 'https://your-chatapi.com',

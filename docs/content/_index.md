@@ -51,7 +51,7 @@ Your agent is a normal process. It connects to ChatAPI with a JWT, receives mess
 - **LLM streaming** — token-by-token responses over WebSocket via `message.stream.*` events
 - **JWT auth** — your backend signs tokens, ChatAPI validates them. No API keys, no sessions, no vendor accounts
 - **Webhook for offline delivery** — ChatAPI calls your endpoint when a message arrives for an offline user
-- **TypeScript SDK** — `npm install @getchatapi/chatapi-sdk`
+- **TypeScript SDK** — `npm install @hastenr/chatapi-sdk`
 - **Single binary** — SQLite included, no external services required at runtime
 - **Portable** — swap SQLite → PostgreSQL or local pub/sub → Redis by implementing one interface
 
@@ -76,6 +76,6 @@ curl http://localhost:8080/health
 - [Getting Started](/getting-started/) — Installation, configuration, and first API call
 - [REST API](/api/rest/) — HTTP endpoint reference
 - [WebSocket API](/api/websocket/) — Real-time event reference
-- [TypeScript SDK](/sdk/) — `npm install @getchatapi/chatapi-sdk`
+- [TypeScript SDK](/sdk/) — `npm install @hastenr/chatapi-sdk`
 - [Architecture](/architecture/) — System design and database schema
 - [AI Bots](/guides/bots/) — Connect your agent

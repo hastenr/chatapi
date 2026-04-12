@@ -115,10 +115,10 @@ After reconnect, fetch missed messages: GET /rooms/{id}/messages?after_seq=<last
 
 ## TypeScript SDK
 
-npm install @getchatapi/chatapi-sdk
+npm install @hastenr/chatapi-sdk
 
 ```typescript
-import { ChatAPI } from '@getchatapi/chatapi-sdk';
+import { ChatAPI } from '@hastenr/chatapi-sdk';
 
 const client = new ChatAPI({ baseURL: 'https://your-chatapi.com', token: '<jwt>' });
 await client.connect();

@@ -8,7 +8,7 @@ weight: 25
 The official TypeScript SDK for ChatAPI. Works in Node.js and the browser.
 
 ```bash
-npm install @getchatapi/chatapi-sdk
+npm install @hastenr/chatapi-sdk
 ```
 
 ## Setup
@@ -16,7 +16,7 @@ npm install @getchatapi/chatapi-sdk
 Your backend mints a JWT signed with `JWT_SECRET`. Pass it to the SDK — the SDK never manages auth itself.
 
 ```typescript
-import { ChatAPI } from '@getchatapi/chatapi-sdk';
+import { ChatAPI } from '@hastenr/chatapi-sdk';
 
 const client = new ChatAPI({
   baseURL: 'https://your-chatapi.com',
@@ -244,7 +244,7 @@ import {
   AuthenticationError,
   ValidationError,
   ConnectionError,
-} from '@getchatapi/chatapi-sdk';
+} from '@hastenr/chatapi-sdk';
 
 try {
   await client.rooms.create({ type: 'dm', members: ['alice'] });

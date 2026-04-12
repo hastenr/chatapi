@@ -47,7 +47,7 @@ Your agent is a normal process. It connects to ChatAPI with a JWT, receives mess
 - **LLM streaming** — token-by-token responses over WebSocket via `message.stream.*` events
 - **JWT auth** — your backend signs tokens, ChatAPI validates them. No API keys, no sessions, no vendor accounts
 - **Webhook for offline delivery** — ChatAPI calls your endpoint when a message arrives for an offline user, so you can trigger push notifications
-- **TypeScript SDK** — `npm install @getchatapi/chatapi-sdk`
+- **TypeScript SDK** — `npm install @hastenr/chatapi-sdk`
 - **Single binary** — SQLite included, no external services required at runtime
 - **Portable** — swap SQLite → PostgreSQL or local pub/sub → Redis by implementing one interface. Zero service changes.
 
