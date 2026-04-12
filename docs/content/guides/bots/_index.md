@@ -112,6 +112,16 @@ Your webhook must return:
 
 ChatAPI uses `system_prompt` as the `system` message at the top of the LLM messages array.
 
+To silence the bot entirely — no LLM call, no stream events — return `skip: true`:
+
+```json
+{
+  "skip": true
+}
+```
+
+Use this for human escalation: when a human agent takes over a conversation, return `skip: true` and the bot goes silent for that message. The bot remains in the room and will respond again if `skip` is not set on future messages.
+
 ### Example — Next.js API route
 
 ```typescript
@@ -126,7 +136,13 @@ export async function POST(req: Request) {
   }
 
   // Handle bot context injection (type === "bot.context")
-  const { message, history } = body;
+  const { bot_id, room_id, message, history } = body;
+
+  // Silence the bot if a human agent has taken over
+  const room = await db.rooms.get(room_id);
+  if (room.metadata?.escalated) {
+    return Response.json({ skip: true });
+  }
 
   const docs = await vectorSearch(message.content);
   const customer = await db.customers.findByUserId(message.sender_id);

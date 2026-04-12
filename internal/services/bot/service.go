@@ -154,12 +154,16 @@ func (s *Service) runBot(b *models.Bot, roomID string, triggerMsg *models.Messag
 	if s.webhookURL == "" {
 		slog.Warn("runBot: WEBHOOK_URL not set — bot will call LLM with no system prompt", "bot_id", b.BotID)
 	} else {
-		var err error
-		systemPrompt, err = s.callWebhook(ctx, b, roomID, triggerMsg, history)
+		resp, err := s.callWebhook(ctx, b, roomID, triggerMsg, history)
 		if err != nil {
 			slog.Error("runBot: webhook failed", "bot_id", b.BotID, "error", err)
 			return
 		}
+		if resp.Skip {
+			slog.Info("runBot: bot response skipped by webhook", "bot_id", b.BotID, "room_id", roomID)
+			return
+		}
+		systemPrompt = resp.SystemPrompt
 	}
 
 	// 3. Announce the stream and call the LLM.
@@ -223,11 +227,14 @@ type botMsgRef struct {
 
 type botContextResponse struct {
 	SystemPrompt string `json:"system_prompt"`
+	// Skip instructs ChatAPI to abort the bot response entirely — no LLM call,
+	// no stream events. Use this to silence bots during human escalation.
+	Skip bool `json:"skip"`
 }
 
 // callWebhook POSTs a bot.context event to the server webhook URL and returns
-// the system prompt the app wants ChatAPI to use for this LLM call.
-func (s *Service) callWebhook(_ context.Context, b *models.Bot, roomID string, msg *models.Message, history []chatMessage) (string, error) {
+// the full response from the app.
+func (s *Service) callWebhook(_ context.Context, b *models.Bot, roomID string, msg *models.Message, history []chatMessage) (botContextResponse, error) {
 	payload := botContextPayload{
 		Type:   "bot.context",
 		BotID:  b.BotID,
@@ -243,15 +250,15 @@ func (s *Service) callWebhook(_ context.Context, b *models.Bot, roomID string, m
 
 	respBody, err := s.webhookSvc.Post(s.webhookURL, s.webhookSecret, payload)
 	if err != nil {
-		return "", err
+		return botContextResponse{}, err
 	}
 
 	var result botContextResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", fmt.Errorf("decode bot.context response: %w", err)
+		return botContextResponse{}, fmt.Errorf("decode bot.context response: %w", err)
 	}
 
-	return result.SystemPrompt, nil
+	return result, nil
 }
 
 // openAIRequest is the request body sent to /chat/completions.
