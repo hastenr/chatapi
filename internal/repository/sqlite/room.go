@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hastenr/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/models"
 )
 
 // SQLiteRoomRepository implements repository.RoomRepository using SQLite.

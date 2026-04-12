@@ -25,7 +25,7 @@ Read `README.md` and `CLAUDE.md` to understand what ChatAPI is and what it is no
 ## Development Setup
 
 ```bash
-git clone https://github.com/hastenr/chatapi.git
+git clone https://github.com/getchatapi/chatapi.git
 cd chatapi
 go mod download
 cp .env.example .env   # set JWT_SECRET

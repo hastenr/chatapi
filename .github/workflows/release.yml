@@ -88,7 +88,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: hastenr/chatapi
+          images: getchatapi/chatapi
           tags: |
             type=ref,event=tag
             type=raw,value=latest

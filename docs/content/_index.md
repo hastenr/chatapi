@@ -12,16 +12,16 @@ weight = 1
 
 <p align="center">
   <a href="https://golang.org/"><img src="https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go version" /></a>
-  <a href="https://github.com/hastenr/chatapi/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-00ED64?style=flat-square&labelColor=001E2B" alt="License" /></a>
-  <a href="https://github.com/hastenr/chatapi/releases"><img src="https://img.shields.io/github/v/release/hastenr/chatapi?style=flat-square&color=00ED64&labelColor=001E2B" alt="Release" /></a>
-  <a href="https://github.com/hastenr/chatapi/actions"><img src="https://img.shields.io/github/actions/workflow/status/hastenr/chatapi/ci.yml?style=flat-square&labelColor=001E2B" alt="CI" /></a>
+  <a href="https://github.com/getchatapi/chatapi/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-00ED64?style=flat-square&labelColor=001E2B" alt="License" /></a>
+  <a href="https://github.com/getchatapi/chatapi/releases"><img src="https://img.shields.io/github/v/release/getchatapi/chatapi?style=flat-square&color=00ED64&labelColor=001E2B" alt="Release" /></a>
+  <a href="https://github.com/getchatapi/chatapi/actions"><img src="https://img.shields.io/github/actions/workflow/status/getchatapi/chatapi/ci.yml?style=flat-square&labelColor=001E2B" alt="CI" /></a>
 </p>
 
 <p align="center">
   <a href="/getting-started/">Quick Start</a> ·
   <a href="/api/rest/">API Reference</a> ·
   <a href="/guides/bots/">AI Bots</a> ·
-  <a href="https://github.com/hastenr/chatapi">GitHub</a>
+  <a href="https://github.com/getchatapi/chatapi">GitHub</a>
 </p>
 
 ---
@@ -51,7 +51,7 @@ Your agent is a normal process. It connects to ChatAPI with a JWT, receives mess
 - **LLM streaming** — token-by-token responses over WebSocket via `message.stream.*` events
 - **JWT auth** — your backend signs tokens, ChatAPI validates them. No API keys, no sessions, no vendor accounts
 - **Webhook for offline delivery** — ChatAPI calls your endpoint when a message arrives for an offline user
-- **TypeScript SDK** — `npm install @hastenr/chatapi-sdk`
+- **TypeScript SDK** — `npm install @getchatapi/chatapi-sdk`
 - **Single binary** — SQLite included, no external services required at runtime
 - **Portable** — swap SQLite → PostgreSQL or local pub/sub → Redis by implementing one interface
 
@@ -63,7 +63,7 @@ docker run -d \
   -e JWT_SECRET=$(openssl rand -base64 32) \
   -e ALLOWED_ORIGINS="*" \
   -v chatapi-data:/data \
-  hastenr/chatapi:latest
+  getchatapi/chatapi:latest
 ```
 
 ```bash
@@ -76,6 +76,6 @@ curl http://localhost:8080/health
 - [Getting Started](/getting-started/) — Installation, configuration, and first API call
 - [REST API](/api/rest/) — HTTP endpoint reference
 - [WebSocket API](/api/websocket/) — Real-time event reference
-- [TypeScript SDK](/sdk/) — `npm install @hastenr/chatapi-sdk`
+- [TypeScript SDK](/sdk/) — `npm install @getchatapi/chatapi-sdk`
 - [Architecture](/architecture/) — System design and database schema
 - [AI Bots](/guides/bots/) — Connect your agent

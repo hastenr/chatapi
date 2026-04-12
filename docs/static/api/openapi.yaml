@@ -22,9 +22,9 @@ info:
 
   license:
     name: MIT
-    url: https://github.com/hastenr/chatapi/blob/main/LICENSE
+    url: https://github.com/getchatapi/chatapi/blob/main/LICENSE
   contact:
-    url: https://github.com/hastenr/chatapi
+    url: https://github.com/getchatapi/chatapi
 
 servers:
   - url: http://localhost:8080

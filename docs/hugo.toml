@@ -8,7 +8,7 @@ theme = 'hugo-book'
   # Book configuration
   BookTheme = 'light'
   BookToC = true
-  BookRepo = 'https://github.com/hastenr/chatapi'
+  BookRepo = 'https://github.com/getchatapi/chatapi'
   BookCommitPath = 'commit'
   BookEditPath = 'edit/main/docs'
   BookDateFormat = 'January 2, 2006'

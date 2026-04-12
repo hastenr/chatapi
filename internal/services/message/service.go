@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/repository"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/repository"
 )
 
 // Service handles message operations

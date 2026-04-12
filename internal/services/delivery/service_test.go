@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/repository/sqlite"
-	"github.com/hastenr/chatapi/internal/services/chatroom"
-	"github.com/hastenr/chatapi/internal/services/delivery"
-	"github.com/hastenr/chatapi/internal/services/message"
-	"github.com/hastenr/chatapi/internal/services/realtime"
-	"github.com/hastenr/chatapi/internal/services/webhook"
-	"github.com/hastenr/chatapi/internal/testutil"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/repository/sqlite"
+	"github.com/getchatapi/chatapi/internal/services/chatroom"
+	"github.com/getchatapi/chatapi/internal/services/delivery"
+	"github.com/getchatapi/chatapi/internal/services/message"
+	"github.com/getchatapi/chatapi/internal/services/realtime"
+	"github.com/getchatapi/chatapi/internal/services/webhook"
+	"github.com/getchatapi/chatapi/internal/testutil"
 )
 
 type deliveryScenario struct {

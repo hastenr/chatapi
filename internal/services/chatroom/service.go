@@ -6,8 +6,8 @@ import (
 	"sort"
 
 	"github.com/google/uuid"
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/repository"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/repository"
 )
 
 // Service handles chatroom operations

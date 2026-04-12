@@ -15,7 +15,7 @@ weight: 10
 ### Build from source
 
 ```bash
-git clone https://github.com/hastenr/chatapi.git
+git clone https://github.com/getchatapi/chatapi.git
 cd chatapi
 go mod download
 go build -o bin/chatapi ./cmd/chatapi
@@ -24,7 +24,7 @@ go build -o bin/chatapi ./cmd/chatapi
 ### Docker
 
 ```bash
-docker pull hastenr/chatapi:latest
+docker pull getchatapi/chatapi:latest
 ```
 
 ## Configuration

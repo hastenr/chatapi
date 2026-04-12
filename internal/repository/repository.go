@@ -3,7 +3,7 @@ package repository
 import (
 	"time"
 
-	"github.com/hastenr/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/models"
 )
 
 // RoomRepository handles rooms and membership.

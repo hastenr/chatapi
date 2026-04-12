@@ -49,4 +49,4 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 - [REST API Reference](/api/rest/) — Full endpoint documentation
 - [WebSocket API Reference](/api/websocket/) — Real-time event reference
 - [Getting Started](/getting-started/) — Installation and configuration
-- [GitHub Issues](https://github.com/hastenr/chatapi/issues) — Report problems or request features
+- [GitHub Issues](https://github.com/getchatapi/chatapi/issues) — Report problems or request features

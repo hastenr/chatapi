@@ -9,15 +9,15 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/hastenr/chatapi/internal/config"
-	"github.com/hastenr/chatapi/internal/db"
-	"github.com/hastenr/chatapi/internal/repository/sqlite"
-	"github.com/hastenr/chatapi/internal/services/chatroom"
-	"github.com/hastenr/chatapi/internal/services/delivery"
-	"github.com/hastenr/chatapi/internal/services/realtime"
-	"github.com/hastenr/chatapi/internal/services/webhook"
-	"github.com/hastenr/chatapi/internal/transport"
-	"github.com/hastenr/chatapi/internal/worker"
+	"github.com/getchatapi/chatapi/internal/config"
+	"github.com/getchatapi/chatapi/internal/db"
+	"github.com/getchatapi/chatapi/internal/repository/sqlite"
+	"github.com/getchatapi/chatapi/internal/services/chatroom"
+	"github.com/getchatapi/chatapi/internal/services/delivery"
+	"github.com/getchatapi/chatapi/internal/services/realtime"
+	"github.com/getchatapi/chatapi/internal/services/webhook"
+	"github.com/getchatapi/chatapi/internal/transport"
+	"github.com/getchatapi/chatapi/internal/worker"
 )
 
 func main() {

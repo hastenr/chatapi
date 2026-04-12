@@ -9,8 +9,8 @@
 <p align="center">
   <a href="https://golang.org/"><img src="https://img.shields.io/badge/go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00ED64?style=flat-square&labelColor=001E2B" alt="License" /></a>
-  <a href="https://github.com/hastenr/chatapi/releases"><img src="https://img.shields.io/github/v/release/hastenr/chatapi?style=flat-square&color=00ED64&labelColor=001E2B" alt="Release" /></a>
-  <a href="https://github.com/hastenr/chatapi/actions"><img src="https://img.shields.io/github/actions/workflow/status/hastenr/chatapi/ci.yml?style=flat-square&labelColor=001E2B" alt="CI" /></a>
+  <a href="https://github.com/getchatapi/chatapi/releases"><img src="https://img.shields.io/github/v/release/getchatapi/chatapi?style=flat-square&color=00ED64&labelColor=001E2B" alt="Release" /></a>
+  <a href="https://github.com/getchatapi/chatapi/actions"><img src="https://img.shields.io/github/actions/workflow/status/getchatapi/chatapi/ci.yml?style=flat-square&labelColor=001E2B" alt="CI" /></a>
 </p>
 
 <p align="center">
@@ -47,7 +47,7 @@ Your agent is a normal process. It connects to ChatAPI with a JWT, receives mess
 - **LLM streaming** — token-by-token responses over WebSocket via `message.stream.*` events
 - **JWT auth** — your backend signs tokens, ChatAPI validates them. No API keys, no sessions, no vendor accounts
 - **Webhook for offline delivery** — ChatAPI calls your endpoint when a message arrives for an offline user, so you can trigger push notifications
-- **TypeScript SDK** — `npm install @hastenr/chatapi-sdk`
+- **TypeScript SDK** — `npm install @getchatapi/chatapi-sdk`
 - **Single binary** — SQLite included, no external services required at runtime
 - **Portable** — swap SQLite → PostgreSQL or local pub/sub → Redis by implementing one interface. Zero service changes.
 
@@ -59,7 +59,7 @@ docker run -d \
   -e JWT_SECRET=$(openssl rand -base64 32) \
   -e ALLOWED_ORIGINS="*" \
   -v chatapi-data:/data \
-  hastenr/chatapi:latest
+  getchatapi/chatapi:latest
 ```
 
 ```bash
@@ -70,7 +70,7 @@ curl http://localhost:8080/health
 Or from source (requires gcc for the SQLite driver):
 
 ```bash
-git clone https://github.com/hastenr/chatapi.git
+git clone https://github.com/getchatapi/chatapi.git
 cd chatapi
 cp .env.example .env    # set JWT_SECRET
 go run ./cmd/chatapi
@@ -120,7 +120,7 @@ Your users see the reply in real time. Message history is stored. Offline users 
 | Docker Compose | `cp .env.example .env && docker compose up -d` |
 | Fly.io | `fly launch` |
 | Railway | Import repo, add a volume at `/data` |
-| Binary | [Releases](https://github.com/hastenr/chatapi/releases) |
+| Binary | [Releases](https://github.com/getchatapi/chatapi/releases) |
 
 ## Configuration
 

@@ -2,7 +2,7 @@
 
 Self-hosted, open-source chat infrastructure for AI-powered apps. Single binary, SQLite, JWT auth. Think self-hosted Sendbird or Stream Chat — designed for apps where one or more participants is an AI.
 
-Source: https://github.com/hastenr/chatapi
+Source: https://github.com/getchatapi/chatapi
 Docs: https://docs.chatapi.cloud
 
 ## What ChatAPI is
@@ -115,10 +115,10 @@ After reconnect, fetch missed messages: GET /rooms/{id}/messages?after_seq=<last
 
 ## TypeScript SDK
 
-npm install @hastenr/chatapi-sdk
+npm install @getchatapi/chatapi-sdk
 
 ```typescript
-import { ChatAPI } from '@hastenr/chatapi-sdk';
+import { ChatAPI } from '@getchatapi/chatapi-sdk';
 
 const client = new ChatAPI({ baseURL: 'https://your-chatapi.com', token: '<jwt>' });
 await client.connect();

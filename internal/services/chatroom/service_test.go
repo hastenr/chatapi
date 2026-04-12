@@ -3,10 +3,10 @@ package chatroom_test
 import (
 	"testing"
 
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/repository/sqlite"
-	"github.com/hastenr/chatapi/internal/services/chatroom"
-	"github.com/hastenr/chatapi/internal/testutil"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/repository/sqlite"
+	"github.com/getchatapi/chatapi/internal/services/chatroom"
+	"github.com/getchatapi/chatapi/internal/testutil"
 )
 
 func newSvc(t *testing.T) *chatroom.Service {

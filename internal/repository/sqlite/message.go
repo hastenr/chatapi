@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hastenr/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/models"
 )
 
 // SQLiteMessageRepository implements repository.MessageRepository using SQLite.

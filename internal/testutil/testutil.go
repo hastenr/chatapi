@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/hastenr/chatapi/internal/db"
+	"github.com/getchatapi/chatapi/internal/db"
 	_ "github.com/mattn/go-sqlite3"
 )
 

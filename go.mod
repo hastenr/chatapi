@@ -1,4 +1,4 @@
-module github.com/hastenr/chatapi
+module github.com/getchatapi/chatapi
 
 go 1.22.0
 

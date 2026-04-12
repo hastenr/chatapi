@@ -3,10 +3,10 @@ package bot_test
 import (
 	"testing"
 
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/repository/sqlite"
-	"github.com/hastenr/chatapi/internal/services/bot"
-	"github.com/hastenr/chatapi/internal/testutil"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/repository/sqlite"
+	"github.com/getchatapi/chatapi/internal/services/bot"
+	"github.com/getchatapi/chatapi/internal/testutil"
 )
 
 func newBotSvc(t *testing.T) *bot.Service {

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/hastenr/chatapi/internal/broker"
-	"github.com/hastenr/chatapi/internal/repository"
+	"github.com/getchatapi/chatapi/internal/broker"
+	"github.com/getchatapi/chatapi/internal/repository"
 )
 
 // Service manages WebSocket connections and real-time messaging

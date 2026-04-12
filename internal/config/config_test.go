@@ -3,7 +3,7 @@ package config_test
 import (
 	"testing"
 
-	"github.com/hastenr/chatapi/internal/config"
+	"github.com/getchatapi/chatapi/internal/config"
 )
 
 func TestLoadDefaults(t *testing.T) {

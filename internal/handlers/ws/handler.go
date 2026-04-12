@@ -9,15 +9,15 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/hastenr/chatapi/internal/auth"
-	"github.com/hastenr/chatapi/internal/config"
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/ratelimit"
-	"github.com/hastenr/chatapi/internal/services/bot"
-	"github.com/hastenr/chatapi/internal/services/chatroom"
-	"github.com/hastenr/chatapi/internal/services/delivery"
-	"github.com/hastenr/chatapi/internal/services/message"
-	"github.com/hastenr/chatapi/internal/services/realtime"
+	"github.com/getchatapi/chatapi/internal/auth"
+	"github.com/getchatapi/chatapi/internal/config"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/ratelimit"
+	"github.com/getchatapi/chatapi/internal/services/bot"
+	"github.com/getchatapi/chatapi/internal/services/chatroom"
+	"github.com/getchatapi/chatapi/internal/services/delivery"
+	"github.com/getchatapi/chatapi/internal/services/message"
+	"github.com/getchatapi/chatapi/internal/services/realtime"
 )
 
 // Handler handles WebSocket connections

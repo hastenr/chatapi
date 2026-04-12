@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/repository"
-	"github.com/hastenr/chatapi/internal/services/webhook"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/repository"
+	"github.com/getchatapi/chatapi/internal/services/webhook"
 )
 
 // Broadcaster is satisfied by realtime.Service. Using an interface keeps the

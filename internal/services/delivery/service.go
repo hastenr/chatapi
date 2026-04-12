@@ -6,11 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hastenr/chatapi/internal/models"
-	"github.com/hastenr/chatapi/internal/repository"
-	"github.com/hastenr/chatapi/internal/services/chatroom"
-	"github.com/hastenr/chatapi/internal/services/realtime"
-	"github.com/hastenr/chatapi/internal/services/webhook"
+	"github.com/getchatapi/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/repository"
+	"github.com/getchatapi/chatapi/internal/services/chatroom"
+	"github.com/getchatapi/chatapi/internal/services/realtime"
+	"github.com/getchatapi/chatapi/internal/services/webhook"
 )
 
 // Service handles message and notification delivery with retries

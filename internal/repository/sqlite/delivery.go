@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hastenr/chatapi/internal/models"
+	"github.com/getchatapi/chatapi/internal/models"
 )
 
 // SQLiteDeliveryRepository implements repository.DeliveryRepository using SQLite.
