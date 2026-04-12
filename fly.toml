@@ -2,7 +2,7 @@ app = "chatapi"
 primary_region = "iad"
 
 [build]
-  image = "getchatapi/chatapi:latest"
+  image = "hastenr/chatapi:latest"
 
 [env]
   LISTEN_ADDR = ":8080"

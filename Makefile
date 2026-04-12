@@ -1,4 +1,4 @@
-DOCKER_IMAGE := getchatapi/chatapi
+DOCKER_IMAGE := hastenr/chatapi
 VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "latest")
 
 .PHONY: build build-all build-linux build-macos build-windows docker-build docker-run docker-push clean test

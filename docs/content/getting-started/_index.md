@@ -24,7 +24,7 @@ go build -o bin/chatapi ./cmd/chatapi
 ### Docker
 
 ```bash
-docker pull getchatapi/chatapi:latest
+docker pull hastenr/chatapi:latest
 ```
 
 ## Configuration
