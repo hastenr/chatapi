@@ -28,6 +28,56 @@ weight = 1
 
 ChatAPI is a self-hosted messaging server for apps where AI participates in conversations. It handles real-time delivery, message history, presence, typing indicators, and LLM streaming — so you focus on your product, not the plumbing.
 
+## How it fits in your stack
+
+### Messaging
+
+```mermaid
+flowchart LR
+    A["User A"]
+    CA["ChatAPI"]
+    B["User B"]
+    BE["Your Backend"]
+
+    A -->|"send message"| CA
+    CA -->|"deliver"| B
+    CA -->|"message.offline"| BE
+    BE -->|"email / push / SMS"| B
+```
+
+Users connect over WebSocket. ChatAPI stores messages, broadcasts to online room members, and fires a webhook when a recipient is offline — your backend decides how to notify them.
+
+### AI Bots
+
+```mermaid
+flowchart LR
+    C["Browser / Mobile"]
+    CA["ChatAPI"]
+    BE["Your Backend"]
+    LLM["LLM Provider"]
+
+    C <-->|"WebSocket"| CA
+    CA -->|"bot.context"| BE
+    BE -->|"system prompt"| CA
+    CA -->|"chat/completions"| LLM
+    LLM -->|"stream"| CA
+    CA -->|"message.stream.*"| C
+```
+
+When a bot is in a room, ChatAPI calls your backend webhook to get the system prompt — your RAG pipeline, customer data, and escalation logic stay in your app. ChatAPI calls the LLM and streams tokens back to clients in real time.
+
+## Built for
+
+| Use case | How ChatAPI fits |
+|---|---|
+| **In-app messaging** | Add DM and group chat to any product — presence, typing indicators, and message history included |
+| **Push notification relay** | Webhook fires when a message arrives for an offline user — forward to FCM, APNs, email, SMS, or any channel |
+| **Customer support** | Bot handles tier-1 questions; human agent takes over with `skip: true` escalation |
+| **In-app AI assistant** | Add an AI chat panel to any SaaS product — bot answers questions about your data via RAG in the webhook |
+| **Sales & lead qualification** | Bot qualifies leads 24/7; human rep steps in when the lead is warm |
+| **User onboarding** | Bot guides new users through setup; escalates to a human success manager for complex accounts |
+| **Internal team AI** | Add AI bots to team rooms to answer questions about docs, policies, and internal data |
+
 ## Features
 
 - **Managed AI bots** — register a bot with an LLM provider URL; ChatAPI calls the model, streams tokens back via `message.stream.*` events, and stores the reply
@@ -37,22 +87,6 @@ ChatAPI is a self-hosted messaging server for apps where AI participates in conv
 - **Escalation support** — webhook can return `{"skip": true}` to silence a bot when a human agent takes over
 - **Single binary** — SQLite included, no external services required
 - **Portable** — swap SQLite → PostgreSQL or local pub/sub → Redis by implementing one interface
-
-## Quick start
-
-```bash
-docker run -d \
-  -p 8080:8080 \
-  -e JWT_SECRET=$(openssl rand -base64 32) \
-  -e ALLOWED_ORIGINS="*" \
-  -v chatapi-data:/data \
-  hastenr/chatapi:latest
-```
-
-```bash
-curl http://localhost:8080/health
-# {"status":"ok","db_writable":true}
-```
 
 ## Documentation
 

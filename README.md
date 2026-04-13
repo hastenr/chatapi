@@ -46,6 +46,21 @@ See [AI Bots](https://docs.chatapi.cloud/guides/bots/) in the docs for a full wa
 
 Docker Compose, single binary, and reverse proxy setup — see [docs.chatapi.cloud/deploy](https://docs.chatapi.cloud/deploy/).
 
+## Contributing
+
+Requires Go 1.22+ and gcc (for the SQLite driver).
+
+```bash
+git clone https://github.com/getchatapi/chatapi.git
+cd chatapi
+go build -o bin/chatapi ./cmd/chatapi
+export JWT_SECRET=$(openssl rand -base64 32)
+export ALLOWED_ORIGINS="*"
+./bin/chatapi
+```
+
+Run tests: `go test ./...`
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

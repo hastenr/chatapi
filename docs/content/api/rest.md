@@ -7,13 +7,47 @@ weight: 21
 
 ## Authentication
 
-All endpoints except `GET /health` and `GET /metrics` require a JWT Bearer token:
+ChatAPI never issues tokens — your backend mints them and your client uses them. The flow is:
 
 ```
-Authorization: Bearer <jwt>
+1. Client logs in to your backend (your existing auth)
+2. Your backend mints a JWT signed with JWT_SECRET and returns it to the client
+3. Client passes the token to ChatAPI on every request
 ```
 
-Your backend signs JWTs with `JWT_SECRET`. The `sub` claim is the user ID for the request.
+The `JWT_SECRET` lives only on your backend and on the ChatAPI server — it is never exposed to the client.
+
+Mint a token on your backend:
+
+```javascript
+// Node.js
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign(
+  { sub: 'user_alice' },
+  process.env.JWT_SECRET,
+  { expiresIn: '24h' }
+);
+// return this token to your client
+```
+
+```go
+// Go
+claims := jwt.MapClaims{
+    "sub": "user_alice",
+    "exp": time.Now().Add(24 * time.Hour).Unix(),
+}
+token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).
+    SignedString([]byte(os.Getenv("JWT_SECRET")))
+// return this token to your client
+```
+
+Pass the token on every ChatAPI request:
+
+```
+Authorization: Bearer <token>          # REST
+ws://localhost:8080/ws?token=<token>   # WebSocket (browser)
+```
 
 Error responses use a flat JSON shape:
 
