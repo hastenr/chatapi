@@ -66,16 +66,19 @@ a {
 
   a {
     color: inherit !important;
+    border-left: 2px solid transparent;
 
     &:hover {
-      color: var(--color-green) !important;
-      background: rgba(0, 237, 100, 0.08);
+      color: var(--color-navy) !important;
+      background: rgba(0, 0, 0, 0.04);
       text-decoration: none !important;
     }
 
     &.active {
-      color: var(--color-green) !important;
-      background: rgba(0, 237, 100, 0.12);
+      color: var(--color-navy) !important;
+      background: rgba(0, 0, 0, 0.05);
+      border-left-color: var(--color-green);
+      font-weight: 600;
     }
   }
 

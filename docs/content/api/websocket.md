@@ -128,10 +128,11 @@ A new message was sent in a room the user belongs to.
   "message_id": "msg_def456",
   "sender_id": "alice",
   "content": "Hello!",
-  "meta": null,
   "created_at": "2026-04-02T12:10:00Z"
 }
 ```
+
+`meta` is included only when non-empty.
 
 ### message.stream.start
 
@@ -227,6 +228,20 @@ Another user started or stopped typing.
 ```
 
 `action` is `"start"` or `"stop"`.
+
+### error
+
+Sent when a request is rejected. Currently emitted for rate limit violations.
+
+```json
+{
+  "type": "error",
+  "data": {
+    "code": "rate_limited",
+    "message": "too many requests"
+  }
+}
+```
 
 ### server.shutdown
 

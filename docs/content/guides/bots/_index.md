@@ -98,7 +98,25 @@ ChatAPI sends a `POST` to `WEBHOOK_URL` with `type: "bot.context"` when a bot is
 
 `history` contains up to 20 of the most recent messages in the room, formatted as OpenAI role/content pairs. The last entry is always the message that triggered the bot.
 
-The same `WEBHOOK_URL` also receives `type: "message.offline"` events for push-notification delivery. Distinguish them by the `type` field.
+The same `WEBHOOK_URL` also receives `type: "message.offline"` events for push-notification delivery. Distinguish them by the `type` field:
+
+```json
+{
+  "type": "message.offline",
+  "room_id": "room_abc123",
+  "recipient_id": "alice",
+  "room_metadata": {"support_tier": "pro"},
+  "message": {
+    "message_id": "msg_def456",
+    "sender_id": "bob",
+    "content": "Hey, are you there?",
+    "seq": 12,
+    "created_at": "2026-04-11T10:00:00Z"
+  }
+}
+```
+
+`room_metadata` is included only when the room has metadata set.
 
 ### Response
 
@@ -122,6 +140,8 @@ To silence the bot entirely — no LLM call, no stream events — return `skip: 
 
 Use this for human escalation: when a human agent takes over a conversation, return `skip: true` and the bot goes silent for that message. The bot remains in the room and will respond again if `skip` is not set on future messages.
 
+**De-escalation** is automatic — ChatAPI calls your webhook on every message. When your app stops returning `skip: true` (e.g. the human agent marks the conversation resolved), the bot resumes responding on the next message. No ChatAPI API call needed.
+
 ### Example — Next.js API route
 
 ```typescript
@@ -140,7 +160,8 @@ export async function POST(req: Request) {
 
   // Silence the bot if a human agent has taken over
   const room = await db.rooms.get(room_id);
-  if (room.metadata?.escalated) {
+  const metadata = JSON.parse(room.metadata || '{}');
+  if (metadata.escalated) {
     return Response.json({ skip: true });
   }
 

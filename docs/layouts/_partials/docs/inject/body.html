@@ -1,5 +1,12 @@
+<script src="/mermaid.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+  // Mermaid diagrams
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { useMaxWidth: true } });
+  }
+
+  // Copy buttons on code blocks
   document.querySelectorAll('pre > code').forEach((code) => {
     const pre = code.parentElement;
     const button = document.createElement('button');
